@@ -10,6 +10,7 @@ local LOG_PREFIX = "[vehicle_destination] "
 local loggedCarError = false
 local loggedEdgeError = false
 local loggedFootprintError = false
+local loggedTileError = false
 
 -- Search radius around the camera's look-at point: a multiple of the eye's distance (a tilted view sees far past
 -- the look-at point), clamped.
@@ -87,13 +88,6 @@ local function screenFootprint(center : Vec3f, maxRadius : number) : Circle
 	return { x = cx, y = cy, radius = math.min(radius * FOOTPRINT_MARGIN + FOOTPRINT_MARGIN_METRES, maxRadius) }
 end
 
--- PROBE (remove before release): the farthest drawn car's edge from the look-at point, as a multiple of the eye's
--- distance, to size RADIUS_PER_DISTANCE.
-local probeMaxRatio = 0.0
--- PROBE (remove before release): ms per stage of a scan, and whether isVisible works on street edges.
-local probeVisibleMs = 0.0
-local probeEntryMs = 0.0
-
 -- The town of a town building, and its name (from `names`, filled as towns are first seen); nil if it isn't one.
 local function townOf(building : Engine.Entity, names : {Engine.Entity : string}) : Engine.Entity, string
 	if building == nil or building < 0 or not api.engine.entityExists(building) then
@@ -122,37 +116,27 @@ local function entryFor(simPerson : Engine.Component.SimPerson, names : {Engine.
 	return entry
 end
 
--- PROBE (remove before release)
-local function probeEdgeRatio(edge : Engine.Entity, center : Circle, distance : number)
-	local baseEdge = api.engine.getComponent(edge, api.type.ComponentType.BASE_EDGE) as Engine.Component.BaseEdge
-	for __, node in ipairs({ baseEdge.node0, baseEdge.node1 }) do
-		local baseNode = api.engine.getComponent(node, api.type.ComponentType.BASE_NODE) as Engine.Component.BaseNode
-		local dx, dy = baseNode.position.x - center.x, baseNode.position.y - center.y
-		probeMaxRatio = math.max(probeMaxRatio, math.sqrt(dx * dx + dy * dy) / distance)
-	end
-end
+-- The search area is looked up in tiles about this wide, one tile per unit of work: a single lookup of a city-wide
+-- circle took 60 ms.
+local TILE_SIZE = 1000.0
 
--- A person on the street: an entry if driving, flagged with whether it's drawn on screen. Returns whether it was drawn.
+-- A person on the street: an entry if driving, flagged with whether it's drawn on screen. Returns true (for pcall).
 local function readOne(person : Engine.Entity, result : PgraceVehicleDestinationScan.Result, drive : MoveMode,
 		names : {Engine.Entity : string}) : boolean
 	if not api.engine.entityExists(person) then
-		return false
+		return true
 	end
 	local simPerson = api.engine.getComponent(person, api.type.ComponentType.SIM_PERSON) as Engine.Component.SimPerson
 	if simPerson == nil or simPerson.lastMoveMode ~= drive then
-		return false
+		return true
 	end
 	result.drivers = result.drivers + 1
 	-- A driving person is the car itself (it has LAND_VEHICLE and MOVE_PATH), so isVisible works on it.
-	local tv = os.clock() -- PROBE (remove before release)
 	local drawn = api.gui.byEntity.isVisible(person)
-	probeVisibleMs = probeVisibleMs + (os.clock() - tv) * 1000 -- PROBE (remove before release)
 	if drawn then
 		result.drawn = result.drawn + 1
 	end
-	local te = os.clock() -- PROBE (remove before release)
 	local ok, entryOrError = pcall(entryFor, simPerson, names)
-	probeEntryMs = probeEntryMs + (os.clock() - te) * 1000 -- PROBE (remove before release)
 	local entry : Entry = { town = nil }
 	if ok then
 		entry = entryOrError as Entry
@@ -162,13 +146,52 @@ local function readOne(person : Engine.Entity, result : PgraceVehicleDestination
 	end
 	entry.drawn = drawn
 	result.entries[#result.entries + 1] = entry
-	return drawn
+	return true
 end
 
--- os.clock() is process CPU time, so it may over-read while worker threads are busy (Trim the Fat uses the same
--- measure).
-function scan.cars() : PgraceVehicleDestinationScan.Result
-	local start = os.clock()
+-- Internal state of a scan, behind the opaque Job type.
+local record JobState
+	drive : MoveMode
+	clock : Clock
+	-- Microseconds of work so far (only the time spent in step).
+	workUs : integer
+	steps : integer
+	-- Tile circles still to look up ({x, y, radius}), and how many of them are done.
+	tiles : {{number}}
+	tilesDone : integer
+	-- Street edges found so far, deduplicated, and how many of them are done.
+	edges : {Engine.Entity}
+	edgeSeen : {Engine.Entity : boolean}
+	edgesDone : integer
+	-- People already read (a car can sit on two edges' lists).
+	seen : {Engine.Entity : boolean}
+	names : {Engine.Entity : string}
+	result : PgraceVehicleDestinationScan.Result
+end
+
+-- Tiles covering the search circle: a grid of TILE_SIZE cells over its bounding square, each looked up as the circle
+-- around the cell, skipping cells that can't touch the search circle.
+local function tilesFor(circle : Circle) : {{number}}
+	local tiles : {{number}} = {}
+	local cells = math.max(1, math.ceil(2 * circle.radius / TILE_SIZE))
+	local size = 2 * circle.radius / cells
+	local tileRadius = size * math.sqrt(0.5)
+	for i = 0, cells - 1 do
+		for j = 0, cells - 1 do
+			local x = circle.x - circle.radius + (i + 0.5) * size
+			local y = circle.y - circle.radius + (j + 0.5) * size
+			local dx, dy = x - circle.x, y - circle.y
+			if math.sqrt(dx * dx + dy * dy) <= circle.radius + tileRadius then
+				tiles[#tiles + 1] = { x, y, tileRadius }
+			end
+		end
+	end
+	return tiles
+end
+
+-- Reads the camera and works out the search area; the street lookups and the cars are left to step. Main thread only.
+function scan.start() : PgraceVehicleDestinationScan.Job
+	local clock = api.type.Clock.new()
 	local drive = api.type["enum"].MoveMode.DRIVE
 	if drive == nil then
 		error("MoveMode.DRIVE missing")
@@ -181,10 +204,9 @@ function scan.cars() : PgraceVehicleDestinationScan.Result
 	local eye = api.gui.camera.getEye()
 	local dx, dy, dz = eye.x - center.x, eye.y - center.y, eye.z - center.z
 	local distance = math.sqrt(dx * dx + dy * dy + dz * dz)
-	local fallback : Circle = { x = center.x, y = center.y,
+	local circle : Circle = { x = center.x, y = center.y,
 		radius = math.min(math.max(distance * RADIUS_PER_DISTANCE, MIN_RADIUS), MAX_RADIUS) }
 	local footprintOk, footprintOrError = pcall(screenFootprint, center, MAX_RADIUS)
-	local circle = fallback
 	if footprintOk and footprintOrError ~= nil then
 		circle = footprintOrError as Circle
 		circle.radius = math.max(circle.radius, MIN_RADIUS)
@@ -192,76 +214,108 @@ function scan.cars() : PgraceVehicleDestinationScan.Result
 		loggedFootprintError = true
 		debugPrint(LOG_PREFIX .. "footprint error: " .. tostring(footprintOrError))
 	end
-	local radius = circle.radius
-	local tOctree = os.clock() -- PROBE (remove before release)
-	local edges = api.engine.util.octree.findEntitiesInCircle(api.type.Vec2f.new(circle.x, circle.y), radius,
-		api.type.ComponentType.BASE_EDGE_STREET)
 
-	local result : PgraceVehicleDestinationScan.Result = {
-		entries = {}, center = center, edges = #edges, radius = math.floor(radius + 0.5), moving = 0, drivers = 0, drawn = 0,
-		ms = 0,
+	local job : JobState = {
+		drive = drive, clock = clock, workUs = 0, steps = 0,
+		tiles = tilesFor(circle), tilesDone = 0,
+		edges = {}, edgeSeen = {}, edgesDone = 0,
+		seen = {}, names = {},
+		result = {
+			entries = {}, center = api.type.Vec3f.new(center.x, center.y, center.z), edges = 0,
+			radius = math.floor(circle.radius + 0.5), moving = 0, drivers = 0, drawn = 0, ms = 0,
+		},
 	}
-	local seen : {Engine.Entity : boolean} = {}
-	local names : {Engine.Entity : string} = {}
-	local simPersonSystem = api.engine.system.simPersonSystem
-	probeMaxRatio = 0.0 -- PROBE (remove before release)
-	local octreeMs = (os.clock() - tOctree) * 1000 -- PROBE (remove before release)
-	local footprintMs = (tOctree - start) * 1000 -- PROBE (remove before release)
-	probeVisibleMs, probeEntryMs = 0.0, 0.0 -- PROBE (remove before release)
-	local peopleMs, edgeVisibleMs = 0.0, 0.0 -- PROBE (remove before release)
-	local edgesVisible, edgesWithDrawn, edgesWithDrawnHidden = 0, 0, 0 -- PROBE (remove before release)
-	for __, edge in ipairs(edges) do
-		local tev = os.clock() -- PROBE (remove before release)
-		local evOk, edgeVisible = pcall(api.gui.byEntity.isVisible, edge) -- PROBE (remove before release)
-		edgeVisibleMs = edgeVisibleMs + (os.clock() - tev) * 1000 -- PROBE (remove before release)
-		if evOk and edgeVisible == true then edgesVisible = edgesVisible + 1 end -- PROBE (remove before release)
-		local tp = os.clock() -- PROBE (remove before release)
-		local ok, peopleOrError = pcall(simPersonSystem.getSimPersonsMovingForTransportNetwork, edge)
-		peopleMs = peopleMs + (os.clock() - tp) * 1000 -- PROBE (remove before release)
-		if ok then
-			local anyDrawn = false -- PROBE (remove before release)
-			for __, person in ipairs(peopleOrError as {Engine.Entity}) do
-				if not seen[person] then
-					seen[person] = true
-					result.moving = result.moving + 1
-					local readOk, drawnOrError = pcall(readOne, person, result, drive, names)
-					if not readOk and not loggedCarError then
-						loggedCarError = true
-						debugPrint(LOG_PREFIX .. "entity " .. tostring(person) .. " error: " .. tostring(drawnOrError))
-					end
-					anyDrawn = anyDrawn or (readOk and drawnOrError == true) -- PROBE (remove before release)
-				end
-			end
-			if anyDrawn then -- PROBE (remove before release)
-				edgesWithDrawn = edgesWithDrawn + 1 -- PROBE (remove before release)
-				if not (evOk and edgeVisible == true) then edgesWithDrawnHidden = edgesWithDrawnHidden + 1 end -- PROBE (remove before release)
-			end -- PROBE (remove before release)
-			if anyDrawn and distance > 0 then -- PROBE (remove before release)
-				pcall(probeEdgeRatio, edge, circle, circle.radius) -- PROBE (remove before release)
-			end -- PROBE (remove before release)
-		elseif not loggedEdgeError then
+	job.workUs = clock:getTime()
+	return job as any as PgraceVehicleDestinationScan.Job
+end
+
+local function lookUpTile(job : JobState, tile : {number})
+	local ok, edgesOrError = pcall(api.engine.util.octree.findEntitiesInCircle, api.type.Vec2f.new(tile[1], tile[2]),
+		tile[3], api.type.ComponentType.BASE_EDGE_STREET)
+	if not ok then
+		if not loggedTileError then
+			loggedTileError = true
+			debugPrint(LOG_PREFIX .. "tile error: " .. tostring(edgesOrError))
+		end
+		return
+	end
+	for __, edge in ipairs(edgesOrError as {Engine.Entity}) do
+		if not job.edgeSeen[edge] then
+			job.edgeSeen[edge] = true
+			job.edges[#job.edges + 1] = edge
+		end
+	end
+end
+
+local function readEdge(job : JobState, edge : Engine.Entity)
+	local ok, peopleOrError = pcall(api.engine.system.simPersonSystem.getSimPersonsMovingForTransportNetwork, edge)
+	if not ok then
+		if not loggedEdgeError then
 			loggedEdgeError = true
 			debugPrint(LOG_PREFIX .. "edge " .. tostring(edge) .. " error: " .. tostring(peopleOrError))
 		end
+		return
 	end
-	result.ms = math.floor((os.clock() - start) * 1000 + 0.5)
-	local f = function(ms : number) : string return string.format("%.0f", ms) end -- PROBE (remove before release)
-	debugPrint(LOG_PREFIX .. "probe timing ms: footprint " .. f(footprintMs) .. ", octree " .. f(octreeMs) -- PROBE (remove before release)
-		.. ", people per edge " .. f(peopleMs) .. ", car isVisible " .. f(probeVisibleMs) -- PROBE (remove before release)
-		.. ", destination " .. f(probeEntryMs) .. ", edge isVisible " .. f(edgeVisibleMs) -- PROBE (remove before release)
-		.. "; edges visible " .. tostring(edgesVisible) .. "/" .. tostring(#edges) -- PROBE (remove before release)
-		.. ", edges with drawn cars " .. tostring(edgesWithDrawn) .. " (of those, edge not visible: " -- PROBE (remove before release)
-		.. tostring(edgesWithDrawnHidden) .. ")") -- PROBE (remove before release)
+	local result = job.result
+	for __, person in ipairs(peopleOrError as {Engine.Entity}) do
+		if not job.seen[person] then
+			job.seen[person] = true
+			result.moving = result.moving + 1
+			local readOk, err = pcall(readOne, person, result, job.drive, job.names)
+			if not readOk and not loggedCarError then
+				loggedCarError = true
+				debugPrint(LOG_PREFIX .. "entity " .. tostring(person) .. " error: " .. tostring(err))
+			end
+		end
+	end
+end
 
-	debugPrint(LOG_PREFIX .. "scan: " .. tostring(result.edges) .. " street edges in " .. tostring(result.radius)
-		.. " m, " .. tostring(result.moving) .. " moving, " .. tostring(result.drivers) .. " drivers, "
-		.. tostring(result.drawn) .. " drawn, " .. tostring(result.ms) .. " ms")
-	debugPrint(LOG_PREFIX .. "probe footprint: " .. (circle == fallback and "FALLBACK" or "ok") -- PROBE (remove before release)
-		.. " eye distance " .. tostring(math.floor(distance + 0.5)) .. " m, old radius " -- PROBE (remove before release)
-		.. tostring(math.floor(fallback.radius + 0.5)) .. " m, circle off look-at by " -- PROBE (remove before release)
-		.. tostring(math.floor(math.sqrt((circle.x - center.x) ^ 2 + (circle.y - center.y) ^ 2) + 0.5)) -- PROBE (remove before release)
-		.. " m, farthest drawn edge at " .. string.format("%.2f", probeMaxRatio) .. " of the radius") -- PROBE (remove before release)
-	return result
+-- Does work until `budgetUs` microseconds have passed (at least one unit: a tile, or an edge and its people).
+-- Returns true when the scan is done; then job's result is complete. Main thread only (isVisible).
+function scan.step(publicJob : PgraceVehicleDestinationScan.Job, budgetUs : integer) : boolean
+	local job = publicJob as any as JobState
+	local stepStart = job.clock:getTime()
+	job.steps = job.steps + 1
+	repeat
+		if job.tilesDone < #job.tiles then
+			job.tilesDone = job.tilesDone + 1
+			lookUpTile(job, job.tiles[job.tilesDone])
+		elseif job.edgesDone < #job.edges then
+			job.edgesDone = job.edgesDone + 1
+			readEdge(job, job.edges[job.edgesDone])
+		else
+			break
+		end
+	until job.clock:getTime() - stepStart >= budgetUs
+	local now = job.clock:getTime()
+	job.workUs = job.workUs + (now - stepStart)
+	local done = job.tilesDone >= #job.tiles and job.edgesDone >= #job.edges
+	if done then
+		local result = job.result
+		result.edges = #job.edges
+		result.ms = math.floor(job.workUs / 1000 + 0.5)
+		debugPrint(LOG_PREFIX .. "scan: " .. tostring(result.edges) .. " street edges in " .. tostring(result.radius)
+			.. " m (" .. tostring(#job.tiles) .. " tiles), " .. tostring(result.moving) .. " moving, "
+			.. tostring(result.drivers) .. " drivers, " .. tostring(result.drawn) .. " drawn; " .. tostring(result.ms)
+			.. " ms of work over " .. tostring(job.steps) .. " frames, "
+			.. tostring(math.floor(now / 1000 + 0.5)) .. " ms in all")
+	end
+	return done
+end
+
+-- Share of the work done, 0 to 1. The tiles come first and stand for a fifth of it (their edge count isn't known
+-- until they're looked up).
+function scan.progress(publicJob : PgraceVehicleDestinationScan.Job) : number
+	local job = publicJob as any as JobState
+	local tiles = #job.tiles > 0 and job.tilesDone / #job.tiles or 1
+	if job.tilesDone < #job.tiles then
+		return 0.2 * tiles
+	end
+	return 0.2 + 0.8 * (#job.edges > 0 and job.edgesDone / #job.edges or 1)
+end
+
+function scan.result(publicJob : PgraceVehicleDestinationScan.Job) : PgraceVehicleDestinationScan.Result
+	return (publicJob as any as JobState).result
 end
 
 return scan

@@ -139,14 +139,19 @@ local function makeSnapshot(entries : {PgraceVehicleDestinationTally.Entry}, onl
 	return snapshot
 end
 
--- Never throws. Runs on the main thread (see Destinations). `keepFrom`, if given, is kept as the counted spot (the
--- arrow's start) instead of the camera's look-at point.
-local function takeCount(keepFrom : Vec3f) : Count
+local function failedCount() : Count
+	nextGeneration = nextGeneration + 1
+	local failed : Snapshot = { error = true, rows = {}, keys = {}, generation = nextGeneration, distance = {},
+		distanceText = {}, trip = {}, tripText = {} }
+	return { visible = failed, all = failed }
+end
+
+-- The tables for a finished scan. Never throws. Main thread (see Destinations). `keepFrom`, if given, is kept as the
+-- counted spot (the arrow's start) instead of the camera's look-at point when the scan started.
+local function buildCount(found : PgraceVehicleDestinationScan.Result, keepFrom : Vec3f) : Count
 	nextGeneration = nextGeneration + 1
 	local generation = nextGeneration
 	local ok, countOrError = pcall(function() : Count
-		local found = scan.cars()
-		local tWindow = os.clock() -- PROBE (remove before release)
 		local from = keepFrom or api.type.Vec3f.new(found.center.x, found.center.y, found.center.z)
 		local d : Distances = { here = {}, hereText = {}, trip = {}, tripText = {} }
 		local all = makeSnapshot(found.entries, false, from, generation, d)
@@ -176,18 +181,23 @@ local function takeCount(keepFrom : Vec3f) : Count
 				end
 			end
 		end
-		local count : Count = { visible = makeSnapshot(found.entries, true, from, generation, d), all = all }
-		debugPrint(LOG_PREFIX .. "probe timing ms: grouping and distances " -- PROBE (remove before release)
-			.. string.format("%.0f", (os.clock() - tWindow) * 1000)) -- PROBE (remove before release)
-		return count
+		return { visible = makeSnapshot(found.entries, true, from, generation, d), all = all }
 	end)
 	if ok then
 		return countOrError as Count
 	end
-	debugPrint(LOG_PREFIX .. "scan error: " .. tostring(countOrError))
-	local failed : Snapshot = { error = true, rows = {}, keys = {}, generation = generation, distance = {},
-		distanceText = {}, trip = {}, tripText = {} }
-	return { visible = failed, all = failed }
+	debugPrint(LOG_PREFIX .. "count error: " .. tostring(countOrError))
+	return failedCount()
+end
+
+-- Microseconds of scanning per frame: a zoomed-out scan (250 ms to 1 s of work in one go) spreads over a second or
+-- two instead of freezing the game.
+local SCAN_BUDGET_US = 6000
+
+-- A count in progress: the scan, and the arrow start to keep (see Destinations).
+local record Counting
+	job : PgraceVehicleDestinationScan.Job
+	keepFrom : Vec3f
 end
 
 local function textRow(text : string, class : string) : TreeNodeId
@@ -798,12 +808,23 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 	local onlyVisible = onlyVisibleState:old()
 	-- A count is due: on open and after Refresh, from wherever the camera is then. isVisible reads the camera, which may
 	-- be restricted during the react step (world2Screen is: "API is currently restricted", an uncatchable crash), so
-	-- the scan runs in a join on the main thread, as Commuter Compass's label position.
+	-- the scan runs in joins on the main thread, as Commuter Compass's label position: one to start it, then one per
+	-- frame for SCAN_BUDGET_US until done. The last count stays on screen meanwhile. Refresh during a count starts over.
 	local pendingRef : ReactRefT<boolean> = react.useRef(true)
+	local countingRef : ReactRefT<Counting> = react.useRef(nil)
+	-- A join is queued and hasn't run yet; at most one at a time.
+	local joinQueuedRef : ReactRefT<boolean> = react.useRef(false)
+	-- Percent done while counting, nil otherwise.
+	local progressState : ReactStateT<integer> = react.useState(nil)
 	react.onStep(function()
+		if joinQueuedRef:get() then
+			return
+		end
 		if pendingRef:get() then
 			pendingRef:set(false)
+			joinQueuedRef:set(true)
 			react.enqueueJoin(function()
+				joinQueuedRef:set(false)
 				-- With an arrow shown, Refresh cancels it if the player moved the view since; otherwise it keeps the
 				-- arrow and its start, and only the counts change.
 				local viewOk, viewOrError = pcall(currentView)
@@ -818,8 +839,42 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 						keepFrom = previous.all.from
 					end
 				end
-				countState:set(takeCount(keepFrom))
 				viewRef:set(view)
+				local ok, jobOrError = pcall(scan.start)
+				if ok then
+					countingRef:set({ job = jobOrError as PgraceVehicleDestinationScan.Job, keepFrom = keepFrom })
+					progressState:set(0)
+				else
+					debugPrint(LOG_PREFIX .. "scan error: " .. tostring(jobOrError))
+					countingRef:set(nil)
+					progressState:set(nil)
+					countState:set(failedCount())
+				end
+			end, "PgraceVehicleDestinationScan")
+		elseif countingRef:get() ~= nil then
+			joinQueuedRef:set(true)
+			react.enqueueJoin(function()
+				joinQueuedRef:set(false)
+				local counting = countingRef:get()
+				if counting == nil then
+					return
+				end
+				local ok, doneOrError = pcall(scan.step, counting.job, SCAN_BUDGET_US)
+				if not ok then
+					debugPrint(LOG_PREFIX .. "scan error: " .. tostring(doneOrError))
+					countingRef:set(nil)
+					progressState:set(nil)
+					countState:set(failedCount())
+				elseif doneOrError == true then
+					countingRef:set(nil)
+					progressState:set(nil)
+					countState:set(buildCount(scan.result(counting.job), counting.keepFrom))
+				else
+					local percent = math.floor(100 * scan.progress(counting.job))
+					if percent ~= progressState:old() then
+						progressState:set(percent)
+					end
+				end
 			end, "PgraceVehicleDestinationScan")
 		end
 	end)
@@ -887,8 +942,12 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 		snapshot.selectionState = selectionState
 	end
 	local body : {TreeNodeId} = {}
+	local progress = progressState:old()
+	if progress ~= nil then
+		body[#body + 1] = textRow(fill(_("Counting… {percent}%"), { percent = tostring(progress) }), "font-scale-annotation")
+	end
 	if snapshot == nil then
-		body[#body + 1] = textRow(_("Counting…"), "font-scale-annotation")
+		-- Nothing yet: the progress line above says why.
 	elseif snapshot.error then
 		body[#body + 1] = textRow(_("Error (see log)"), "font-scale-body, negative")
 	elseif snapshot.result.total == 0 then

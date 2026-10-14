@@ -103,6 +103,15 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
    - Each car is read in its own `pcall`, so one bad entity becomes Unknown without failing the scan.
 5. Log `[vehicle_destination] scan: E street edges in R m, N moving, M drivers, D drawn, C counted, T ms`.
 
+**Spread over frames** (the freeze fix): a zoomed-out scan was 250 ms to 1 s of work in one frame, almost all of it
+the engine's own lookups (finding street edges: 60 ms in one call; the people on each edge: 113 ms; destinations 23
+ms; isVisible on 2,500 cars only 4 ms). `scan.start` reads the camera and splits the search circle into ~1 km tiles;
+`scan.step(job, 6000 µs)` then looks up tiles and reads edges until the budget is spent, once per frame, timed with
+`api.type.Clock` (wall clock, µs; `os.clock` is process CPU time and runs several times too fast in a busy game). The
+last count stays on screen with "Counting… N%" above it; Refresh during a count starts over. Skipping edges that
+aren't `isVisible` was measured and rejected: 2,919 of 3,225 edges counted as visible, and 8 edges with drawn cars
+didn't.
+
 The scan runs on the main thread: on open and on Refresh, the window sets a "scan due" ref, and `react.onStep`
 hands the scan to `react.enqueueJoin`. `isVisible` is a camera read, and camera reads can be restricted during the
 react step (`world2Screen` throws "API is currently restricted", an uncatchable crash) or crash from a step timer
