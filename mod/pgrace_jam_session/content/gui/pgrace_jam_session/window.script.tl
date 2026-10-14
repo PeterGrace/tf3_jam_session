@@ -9,7 +9,6 @@ local selector_react_util = ug_require "::/gui/main/selector_react_util.tl" as S
 local color_util = ug_require "::/gui/main/color_util.tl" as ColorUtil
 local callout_react_util = ug_require "::/gui/main/callout_react_util.tl" as CalloutReactUtil
 local styleutil = ug_require "::/gui/main/styleutil.tl" as StyleUtil
-local notification_util = ug_require "::/game_mechanics/notifications/notification_util.tl" as NotificationUtil
 local tally = ug_require "pgrace_jam_session::/gui/pgrace_jam_session/tally.tl" as PgraceJamSessionTally
 local scan = ug_require "pgrace_jam_session::/gui/pgrace_jam_session/scan.tl" as PgraceJamSessionScan
 
@@ -529,49 +528,12 @@ end
 -- for a moment after our recipe unmounts, and a ref of an unmounted recipe throws ("attempt to index a nil value" in
 -- the base notification cache took down the whole UI when the window closed). Module-level state lives on.
 
--- The notification state, refreshed on the main thread each step while an arrow is shown (FlowAction), and only read
--- by the lookup below. The HUD icons call the lookup from worker threads, where reading the engine's notification
--- state crashed the game natively ("Main Pool 1", no Lua error); the base cache splits the work the same way.
-local record NotificationCache
-	native : NativeLuaTable
-	persisting : {Engine.Entity : {integer}}
-end
-local notificationCache : NotificationCache = { native = nil, persisting = {} }
-
--- Main thread only.
-local function refreshNotifications()
-	local ok, native = pcall(notification_util.externalGetNotificationsStateNative)
-	if not ok or native == nil then
-		return
-	end
-	local persistingOk, persisting = pcall(notification_util.getPersistingEntity2NotificationFromNative, native as NativeLuaTable)
-	if persistingOk and persisting ~= nil then
-		-- Replaced whole, never edited in place, so a reader on another thread sees one state or the other.
-		notificationCache = { native = native as NativeLuaTable, persisting = persisting as {Engine.Entity : {integer}} }
-	end
-end
-
--- The base cache's lookup (notification_react_util.createNotificationCacheAccessFn) without its hooks: it reads the
--- cached state only. Never throws: an error gives no notification icons.
-local function accessNotifications(entity : Engine.Entity) : {Notification}
-	local cache = notificationCache
-	local ok, notificationsOrError = pcall(function() : {Notification}
-		local result : {Notification} = {}
-		if cache.native == nil then
-			return result
-		end
-		for __, notificationId in ipairs(cache.persisting[entity] or {}) do
-			local notification = notification_util.getNotificationFromNative(cache.native, notificationId)
-			notification.notificationId = notificationId
-			result[#result + 1] = notification
-		end
-		return result
-	end)
-	if ok then
-		return notificationsOrError as {Notification}
-	end
-	return {}
-end
+-- No notification lookup (accessNotificationCacheFn nil): the HUD icons then add no notification badges
+-- (hud_icon_toolbox.tl checks for nil), so nothing of ours runs on their worker threads. Their badges poll the lookup
+-- from a step timer (NotificationHudIcons, useStepStateTimer), and our lookups crashed the game natively twice
+-- ("Main Pool N", a jump to a bad address, "notifications" on the thread's stack): first when it read the engine's
+-- notification state there, then still when it only read a copy cached on the main thread. The cost: while an arrow
+-- is shown, the map's notification badges are hidden; the icons themselves stay.
 
 -- Empty filters, as game.tl starts with, behind a ref-shaped object (the selector calls filters:get()).
 local mapFilters : GameContext.Filters = {
@@ -594,7 +556,6 @@ local function mapGameContext(base : GameContext) : GameContext
 		rendererComponent = game_react_globals.getDefaultRendererComponent(),
 		windowContainer = base.windowContainer,
 		toolStack = base.toolStack,
-		accessNotificationCacheFn = accessNotifications,
 		filters = mapFiltersRef as any as ReactRefT<GameContext.Filters>,
 	} as GameContext
 end
@@ -695,8 +656,6 @@ end
 -- window closed) clears the override.
 local FlowAction = react.RegisterRecipe("PgraceJamSessionFlowAction", function(params : FlowParams) : TreeNodeId
 	local gameCtx = mapGameContext(params.gameCtx)
-	-- The HUD icons' notification lookup reads this (see refreshNotifications).
-	react.onStep(refreshNotifications)
 	local key = tostring(params.generation) .. ">" .. tostring(params.town)
 	local cacheRef : ReactRefT<FlowCache> = react.useRef(nil)
 	local frameRef : ReactRefT<{Vec3f}> = react.useRef(nil)

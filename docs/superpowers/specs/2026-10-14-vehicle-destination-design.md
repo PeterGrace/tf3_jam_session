@@ -73,7 +73,9 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
     draws above windows, so it sat on the table. Hiding the label where `api.gui.byId.getSize(windowId)` said the
     window was didn't work in-game (not investigated).
   - The map action needs a fuller game context than the mod button area gives: the arrow builds one at module level
-    (default renderer, a notification cache refreshed on the main thread, empty filters); hooks crashed the UI.
+    (default renderer, empty filters); hooks crashed the UI. **No notification lookup** (rev 2): the HUD icons poll it
+    from a step timer on worker threads, and both a direct and a main-thread-cached lookup crashed the game natively.
+    Without one, notification badges are hidden while an arrow is shown.
 - **Columns:** From | To | Cars | Home | Work | Shop | Trip | Here (user's choice: both distances, arrow unchanged).
   - **From:** the origin town's name (opens its window), or "Unknown". **To:** pin, arrow toggle and name, as before.
   - **Trip:** straight-line distance between the two towns' centres. **Here:** from the counted spot to To's centre,
