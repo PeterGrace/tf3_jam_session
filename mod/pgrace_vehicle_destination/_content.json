@@ -1,0 +1,9 @@
+{
+    "archives": null,
+    "files": [
+        "gui/pgrace_vehicle_destination/industry_plugin.res.lua",
+        "gui/pgrace_vehicle_destination/pgrace_vehicle_destination.script.tl",
+        "gui/pgrace_vehicle_destination/util.d.tl",
+        "gui/pgrace_vehicle_destination/util.tl"
+    ]
+}
