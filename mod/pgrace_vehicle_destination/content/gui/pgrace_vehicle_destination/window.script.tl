@@ -4,8 +4,16 @@ local tool_react_util = ug_require "::/gui/main/tool_react_util.tl" as ToolReact
 local game_react_globals = ug_require "::/gui/main/game_react_globals.tl" as GameReactGlobals
 local main_mod_button_area = ug_require "::/gui/main/main_mod_button_area.tl" as MainModButtonArea
 local line_react_util = ug_require "::/gui/line_vehicle_mgmt/line_react_util.tl" as LineReactUtil
+local engine_react_util = ug_require "::/gui/main/engine_react_util.tl" as EngineReactUtil
+local selector_react_util = ug_require "::/gui/main/selector_react_util.tl" as SelectorReactUtil
+local color_util = ug_require "::/gui/main/color_util.tl" as ColorUtil
+local callout_react_util = ug_require "::/gui/main/callout_react_util.tl" as CalloutReactUtil
+local styleutil = ug_require "::/gui/main/styleutil.tl" as StyleUtil
+local notification_react_util = ug_require "::/game_mechanics/notifications/types/notification_react_util.tl" as NotificationReactUtil
 local tally = ug_require "pgrace_vehicle_destination::/gui/pgrace_vehicle_destination/tally.tl" as PgraceVehicleDestinationTally
 local scan = ug_require "pgrace_vehicle_destination::/gui/pgrace_vehicle_destination/scan.tl" as PgraceVehicleDestinationScan
+
+local layerColors = api.gui.genericRep.get(api.gui.genericRep.find("::/gui/layers/layer_colors.gres")).data as LayerColors
 
 local LOG_PREFIX = "[vehicle_destination] "
 local WINDOW_ID = "pgrace_vehicle_destination_window"
@@ -13,6 +21,20 @@ local BUTTON_ICON = "::/gui/entity_window/icons/vehicle_car.tga"
 local REFRESH_ICON = "::/gui/builtin/window/icons/refresh.tga"
 -- F2's "Show Only Visible" toggle (statistics_react_util.createShowOnlyVisibleButton).
 local EYE_ICON = "::/gui/statistics/icons/symbol_eye_18.tga"
+local LOCATE_ICON = "::/gui/line_vehicle_mgmt/icons/symbol_locate.tga"
+local ARROW_ICON = "::/gui/entity_window/icons/symbol_arrow_up.tga"
+local FLOW_ACTION_KEY = "pgrace_vehicle_destination_flow"
+-- Framing the arrow, as Commuter Compass: camera distance as a multiple of the arrow's length, clamped (focusPosition
+-- caps it at the game's maximum zoom-out, about 4,055 m).
+local CAMERA_DISTANCE_FACTOR = 1.6
+local CAMERA_MIN_DISTANCE = 500
+local CAMERA_MAX_DISTANCE = 4000
+-- How far to move the view toward the camera, as a fraction of the camera distance, so the arrow sits in the map area
+-- above our window (docked bottom-centre, about the lower 40% of the screen). A first guess; tune in-game.
+local CAMERA_WINDOW_SHIFT = 0.2
+-- The cargo-flow arrow is drawn as an arc this high (as a share of its length); the label sits on its top
+-- (Commuter Compass, measured by eye).
+local ARROW_ARC_HEIGHT = 0.06
 -- F2's class for numeric columns; window.css.lua aligns it inside our window.
 local RIGHT_ALIGNED = "right-aligned"
 
@@ -28,6 +50,10 @@ local record Snapshot
 	keys : {integer}
 	-- Differs per scan, so a refresh remounts the table (cells keep their first userParam).
 	generation : integer
+	-- Where the cars were counted (the camera's look-at point); the arrows start here.
+	from : Vec3f
+	-- The town whose arrow is shown, or nil. Set by the window when it renders, so cells can read and change it.
+	selectionState : ReactStateT<Engine.Entity>
 end
 
 local nextGeneration = 0
@@ -37,7 +63,9 @@ local function takeSnapshot(onlyVisible : boolean) : Snapshot
 	nextGeneration = nextGeneration + 1
 	local snapshot : Snapshot = { error = false, rows = {}, keys = {}, generation = nextGeneration }
 	local ok, err = pcall(function() : boolean
-		snapshot.result = tally.group(scan.cars(onlyVisible).entries)
+		local found = scan.cars(onlyVisible)
+		snapshot.from = api.type.Vec3f.new(found.center.x, found.center.y, found.center.z)
+		snapshot.result = tally.group(found.entries)
 		for __, row in ipairs(snapshot.result.rows) do
 			snapshot.rows[row.town] = row
 			snapshot.keys[#snapshot.keys + 1] = row.town
@@ -93,8 +121,31 @@ local function carsText(count : integer, onlyVisible : boolean) : string
 	return fill(forms[category] or forms.other, { count = formatCount(count) })
 end
 
+-- Our own pin, as the base LocateButton draws it: other mods may replace the base one (Supply Chain Manager adds a
+-- planner button to it), which pushed the names out of line in Trim the Fat's table.
+local function makeLocateButton(entity : Engine.Entity) : TreeNodeId
+	return builtin.Button{
+		meta = { tooltip = _("Locate") },
+		content = builtin.ImageView{
+			path = LOCATE_ICON,
+			scaling = builtin.type.ImageViewScaling.AutoFit,
+		},
+		onClick = function()
+			if api.engine.entityExists(entity) then
+				api.gui.camera.followEntity(entity, true)
+			end
+		end,
+	}
+end
+
+-- Pin, arrow toggle and the name (opens the town's window), as Commuter Compass's name cell.
 local TownCell = react.RegisterRecipe("PgraceVehicleDestinationTownCell", function(params : Builtin.TableCellParam) : TreeNodeId
-	local row = (params.userParam as Snapshot).rows[params.rowKey]
+	local snapshot = params.userParam as Snapshot
+	local row = snapshot.rows[params.rowKey]
+	-- Cells keep their first userParam, so the toggle polls the shared selection to follow other rows' clicks.
+	local selectedState = engine_react_util.useStepState(function() : boolean
+		return snapshot.selectionState ~= nil and snapshot.selectionState:old() == params.rowKey
+	end)
 	if row == nil then
 		return textRow("", "font-scale-body")
 	end
@@ -104,11 +155,215 @@ local TownCell = react.RegisterRecipe("PgraceVehicleDestinationTownCell", functi
 		return textRow(row.name, "font-scale-body")
 	end
 	return builtin.BoxLayout{
+		orientation = builtin.type.Orientation.Horizontal,
 		children = {
-			line_react_util.makeEntityWindowButton(row.name, params.rowKey, nil, nil, true, nil, row.name),
+			makeLocateButton(params.rowKey),
+			builtin.ToggleButton{
+				meta = { tooltip = _("Show on the map") },
+				content = builtin.ImageView{
+					path = ARROW_ICON,
+					scaling = builtin.type.ImageViewScaling.AutoFit,
+				},
+				value = selectedState:old() and 1 or 0,
+				onValueChange = function(value : integer)
+					if snapshot.selectionState == nil then
+						return
+					end
+					if value == 1 then
+						snapshot.selectionState:set(params.rowKey)
+					elseif snapshot.selectionState:old() == params.rowKey then
+						snapshot.selectionState:set(nil)
+					end
+				end,
+			},
+			builtin.Component{
+				layout = builtin.BoxLayout{
+					children = {
+						line_react_util.makeEntityWindowButton(row.name, params.rowKey, nil, nil, true, nil, row.name),
+					},
+				},
+			},
 		},
 	}
 end)
+
+-- The map arrow, after Commuter Compass (pgrace_commuter_compass.script.tl), whose notes in AGENTS.md ("Drawing on
+-- the map") explain each piece.
+
+-- The renderer API has this, but it is missing from the type definitions. The override takes precedence over the tool
+-- stack's active owner without replacing it, so clearing it with `false` hands the map straight back.
+local record ActiveOwnerApi
+	setActiveOwnerOverride : function(ReactRefWrap | boolean)
+end
+
+local record FlowParams
+	gameCtx : GameContext
+	from : Vec3f
+	town : Engine.Entity
+	-- Part of the action key: a new count (a new starting point) needs a fresh mount.
+	generation : integer
+end
+
+local record FlowCache
+	key : string
+	action : function() : TreeNodeId
+end
+
+local function planarDistance(a : Vec3f, b : Vec3f) : number
+	local dx, dy = b.x - a.x, b.y - a.y
+	return math.sqrt(dx * dx + dy * dy)
+end
+
+-- Centre of the town's bounding volume, as the base town window computes it.
+local function townPosition(town : Engine.Entity) : Vec3f
+	local bv = api.engine.getComponent(town, api.type.ComponentType.BOUNDING_VOLUME) as Engine.Component.BoundingVolume
+	if bv == nil then
+		return nil
+	end
+	return api.type.Vec3f.new(0.5 * (bv.bbox.min.x + bv.bbox.max.x), 0.5 * (bv.bbox.min.y + bv.bbox.max.y), bv.bbox.max.z)
+end
+
+local function formatDistance(metres : number) : string
+	local ok, text = pcall(api.util.formatLength, metres)
+	if ok and text ~= nil then
+		return text as string
+	end
+	return tostring(math.floor(metres + 0.5)) .. " m"
+end
+
+-- Cargo Compass's style for actual flows: the base cargo-flow colours, animated, with the passenger icon.
+local function makeFlowLayerConfig(from : Vec3f, to : Vec3f) : LayerConfig
+	local flow = api.type.LayerConfig.CargoFlowRenderableConfig.FlowData.new()
+	flow.from = from
+	flow.to = to
+	flow.speed = 40.0
+	flow.arrowColors = color_util.toArray4(layerColors.CargoFlow.Consumers3D.Actual)
+	flow.cargoIconAlpha = 1.0
+	flow.cargoTypes = { api.res.cargoTypeRep.getPassengerCargoTypeId() }
+	local cargoFlow = api.type.LayerConfig.CargoFlowRenderableConfig.new()
+	cargoFlow.flowData = { flow }
+	local layerConfig = api.type.LayerConfig.new()
+	layerConfig.cargoFlowRenderableConfig = cargoFlow
+	return layerConfig
+end
+
+local record ArrowLabelParams is IRecipeParamWithMeta
+	text : string
+end
+
+local ArrowLabel = react.RegisterRecipe("PgraceVehicleDestinationArrowLabel", function(params : ArrowLabelParams) : TreeNodeId
+	return builtin.BoxLayout{
+		children = { builtin.TextView{ meta = { class = "font-scale-body" }, text = params.text } },
+	}
+end)
+
+local record ArrowLabelLayerParams
+	from : Vec3f
+	to : Vec3f
+	text : string
+end
+
+-- The arrow's distance at the top of its arc: a full-screen layer of the arrow's own map action, so it comes and goes
+-- with the arrow. window.css.lua makes the floating layout fill the screen.
+local ArrowLabelLayer = react.RegisterRecipe("PgraceVehicleDestinationArrowLabelLayer", function(params : ArrowLabelLayerParams) : TreeNodeId
+	react.setMouseTransparent(true)
+	react.setDisableFocusable(true)
+	local a, b = params.from, params.to
+	local lift = ARROW_ARC_HEIGHT * planarDistance(a, b)
+	local top = api.type.Vec3f.new(0.5 * (a.x + b.x), 0.5 * (a.y + b.y), 0.5 * (a.z + b.z) + lift)
+	-- In fractions of the screen; nil while unknown.
+	local positionState : ReactStateT<Vec2f> = react.useState(nil)
+	react.onStep(function()
+		-- world2Screen is restricted during the react step, so it runs in a join on the main thread.
+		react.enqueueJoin(function()
+			local ok, point = pcall(api.gui.camera.world2Screen, top)
+			local sizeOk, size = pcall(api.gui.camera.getSize)
+			if not ok or not sizeOk or point == nil or size == nil then
+				return
+			end
+			local pixel, viewport = point as Vec2i, size as Vec2i
+			if viewport.x <= 0 or viewport.y <= 0 then
+				return
+			end
+			local h, v = pixel.x / viewport.x, pixel.y / viewport.y
+			local old = positionState:old()
+			if old == nil or old.x ~= h or old.y ~= v then
+				positionState:set(api.type.Vec2f.new(h, v))
+			end
+		end, "PgraceVehicleDestinationArrowLabelLayer")
+	end)
+	local position = positionState:old()
+	if position == nil or position.x < 0 or position.x > 1 or position.y < 0 or position.y > 1 then
+		return builtin.FloatingLayout{ children = {} }
+	end
+	return builtin.FloatingLayout{
+		children = {
+			builtin.FloatingLayoutChild{
+				h = position.x,
+				v = position.y,
+				-- The tealdef types this field as boolean, but the game passes the enum.
+				overflowMode = builtin.type.FloatingLayoutOverflowMode.KeepInside as any as boolean,
+				item = callout_react_util.DefaultCalloutWrapper{
+					meta = { styleSheet = styleutil.makeStyle{ anchorPoint = api.type.Vec2f.new(0.5, 0.5) } },
+					recipe = ArrowLabel,
+					recipeParam = { text = params.text } as ArrowLabelParams,
+				},
+			},
+		},
+	}
+end)
+
+-- Moves the look-at point toward the camera, so the arrow's midpoint lands above our window. The direction comes
+-- from the eye and centre; world2Screen confirms the sign (main thread only).
+local function shiftClearOfWindow(midpoint : Vec3f, distance : number) : Vec3f
+	local camera = api.gui.camera
+	local eye = camera.getEye()
+	local center = camera.getCenter()
+	local fx, fy = center.x - eye.x, center.y - eye.y
+	local length = math.sqrt(fx * fx + fy * fy)
+	if length < 1e-3 then
+		return midpoint
+	end
+	fx, fy = fx / length, fy / length
+	-- Ahead of the look-at point should be higher on screen (smaller y).
+	local ahead = api.type.Vec3f.new(center.x + 100 * fx, center.y + 100 * fy, center.z)
+	if camera.world2Screen(ahead).y > camera.world2Screen(center).y then
+		fx, fy = -fx, -fy
+	end
+	local shift = CAMERA_WINDOW_SHIFT * math.min(distance, CAMERA_MAX_DISTANCE)
+	return api.type.Vec3f.new(midpoint.x - shift * fx, midpoint.y - shift * fy, midpoint.z)
+end
+
+local function frameCamera(from : Vec3f, to : Vec3f)
+	local distance = math.max(CAMERA_MIN_DISTANCE, planarDistance(from, to) * CAMERA_DISTANCE_FACTOR)
+	local midpoint = api.type.Vec3f.new(0.5 * (from.x + to.x), 0.5 * (from.y + to.y), 0.5 * (from.z + to.z))
+	local ok, target = pcall(shiftClearOfWindow, midpoint, distance)
+	if not ok then
+		debugPrint(LOG_PREFIX .. "camera shift failed: " .. tostring(target))
+		target = midpoint
+	end
+	api.gui.camera.focusPosition(target as Vec3f, distance)
+end
+
+-- The map action's selector and HUD icons read these from the game context. The window gets none (the mod button
+-- area passes no gameCtx), so build them as the game does (game.tl): its default renderer, a notification cache, and
+-- empty filters.
+local function useMapGameContext(base : GameContext) : GameContext
+	local accessNotificationCacheFn = notification_react_util.createNotificationCacheAccessFn()
+	local filters : ReactRefT<GameContext.Filters> = react.useRef({
+		menuFilter = { enabledItems = {}, disabledItems = {}, disabledParams = {} },
+		vehicleFilter = { enabledVehicles = {}, disabledVehicles = {} },
+		protectedEntities = {},
+		selectorEntityFilter = {},
+	})
+	return {
+		rendererComponent = game_react_globals.getDefaultRendererComponent(),
+		windowContainer = base.windowContainer,
+		toolStack = base.toolStack,
+		accessNotificationCacheFn = accessNotificationCacheFn,
+		filters = filters,
+	} as GameContext
+end
 
 local function makeNumberCell(name : string, valueOf : function(Row) : integer) : Recipe<Builtin.TableCellParam>
 	return react.RegisterRecipe(name, function(params : Builtin.TableCellParam) : TreeNodeId
@@ -162,6 +417,87 @@ local function makeTable(snapshot : Snapshot) : TreeNodeId
 	}
 end
 
+-- Binds a map action that draws one arrow and makes it the renderer's active owner override. Unmounting (arrow off,
+-- window closed) clears the override.
+local FlowAction = react.RegisterRecipe("PgraceVehicleDestinationFlowAction", function(params : FlowParams) : TreeNodeId
+	-- Built here, not in the window, so the notification cache only polls while an arrow is shown.
+	local gameCtx = useMapGameContext(params.gameCtx)
+	local key = tostring(params.generation) .. ">" .. tostring(params.town)
+	local cacheRef : ReactRefT<FlowCache> = react.useRef(nil)
+	local frameRef : ReactRefT<{Vec3f}> = react.useRef(nil)
+	local changed = cacheRef:get() == nil or cacheRef:get().key ~= key
+	if changed then
+		local from = params.from
+		local okTo, to = pcall(townPosition, params.town)
+		local action : function() : TreeNodeId = nil
+		if okTo and to ~= nil then
+			local text = formatDistance(planarDistance(from, to as Vec3f))
+			action = selector_react_util.makeDefaultSelectorAction(gameCtx, makeFlowLayerConfig(from, to as Vec3f),
+				nil, function() : TreeNodeId
+					return builtin.FullScreenComponent{
+						recipe = ArrowLabelLayer,
+						param = { from = from, to = to as Vec3f, text = text } as ArrowLabelLayerParams,
+					}
+				end)
+			frameRef:set({ from, to as Vec3f })
+		else
+			debugPrint(LOG_PREFIX .. "flow: no position for town " .. tostring(params.town))
+		end
+		cacheRef:set({ key = key, action = action })
+	end
+	-- The camera moves on the main thread: the shift reads world2Screen, restricted during the react step.
+	react.onStep(function()
+		local ends = frameRef:get()
+		if ends ~= nil then
+			frameRef:set(nil)
+			react.enqueueJoin(function()
+				local ok, err = pcall(function() : boolean
+					frameCamera(ends[1], ends[2])
+					return true
+				end)
+				if not ok then
+					debugPrint(LOG_PREFIX .. "camera move failed: " .. tostring(err))
+				end
+			end, "PgraceVehicleDestinationFrameCamera")
+		end
+	end)
+
+	-- One action key per arrow: switching arrows under a single key kept the old arrow on screen (Commuter Compass).
+	local selfRef = react.useAction(gameCtx.rendererComponent, cacheRef:get().action, FLOW_ACTION_KEY .. ":" .. key)
+
+	local function setOverride(owner : ReactRefWrap | boolean) : boolean
+		local rendererComponent = gameCtx.rendererComponent
+		if rendererComponent == nil or rendererComponent:hasExpired() then
+			return false
+		end
+		local rc = rendererComponent:get()
+		if rc == nil or not rc:getIdentity() then
+			return false
+		end
+		-- Not part of the documented API: degrade to "no arrow" rather than erroring if a game update removes it.
+		local rcApi = rc:getApi() as any as ActiveOwnerApi
+		if rcApi.setActiveOwnerOverride == nil then
+			return false
+		end
+		rcApi.setActiveOwnerOverride(owner)
+		return true
+	end
+
+	local function activate()
+		setOverride(selfRef)
+	end
+
+	react.onMount(activate)
+	if changed and cacheRef:get().action ~= nil and selfRef:get() ~= nil then
+		activate()
+	end
+	react.onUnmount(function()
+		setOverride(false)
+	end)
+
+	return builtin.BoxLayout{ children = {} }
+end)
+
 -- Settings kept between openings, until the game restarts (the window's state starts fresh each time it opens).
 local record Remembered
 	onlyVisible : boolean
@@ -170,12 +506,15 @@ end
 local remembered : Remembered = { onlyVisible = true, expanded = false }
 
 local record ContentParams
+	gameCtx : GameContext
 	expanded : boolean
 	setExpanded : function(boolean)
 end
 
 local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", function(params : ContentParams) : TreeNodeId
 	local snapshotState : ReactStateT<Snapshot> = react.useState(nil)
+	-- The town whose arrow is on the map; one at a time. It stays across refreshes and starts from the new count's spot.
+	local selectionState : ReactStateT<Engine.Entity> = react.useState(nil)
 	local onlyVisibleState = react.useState(remembered.onlyVisible) as ReactStateT<boolean>
 	local onlyVisible = onlyVisibleState:old()
 	-- A scan is due: on open, after Refresh and when the eye changes. isVisible reads the camera, which may be
@@ -250,6 +589,9 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 	}
 
 	local snapshot = snapshotState:old()
+	if snapshot ~= nil then
+		snapshot.selectionState = selectionState
+	end
 	local body : {TreeNodeId} = {}
 	if snapshot == nil then
 		body[#body + 1] = textRow(_("Counting…"), "font-scale-annotation")
@@ -268,6 +610,10 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 		if #snapshot.keys > 0 then
 			body[#body + 1] = makeTable(snapshot)
 		end
+	end
+	local town = selectionState:old()
+	if town ~= nil and snapshot ~= nil and snapshot.from ~= nil and snapshot.rows[town] ~= nil then
+		body[#body + 1] = FlowAction{ gameCtx = params.gameCtx, from = snapshot.from, town = town, generation = snapshot.generation }
 	end
 
 	-- F2's layout (StatisticsContainer), as Trim the Fat: a tab widget filling the window, here with one tab, and the
@@ -306,6 +652,16 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 	}
 end)
 
+-- The tool machinery only reads gameCtx.windowContainer (and the button its tool stack); the mod-area plugin gets
+-- no gameCtx, so build one from the game's defaults.
+local function makeToolParam() : ToolParam
+	local gameCtx = {
+		windowContainer = game_react_globals.getDefaultWindowContainer(),
+		toolStack = game_react_globals.getDefaultToolStack(),
+	} as GameContext
+	return { gameCtx = gameCtx }
+end
+
 local DestinationsWindow = react.RegisterWrapperRecipe("PgraceVehicleDestinationWindow", builtin.Window, function(params : ToolReactUtil.IToolWindowParam<ToolParam>) : TreeNodeId
 	local expandedState = react.useState(remembered.expanded) as ReactStateT<boolean>
 	-- Size, position and animations come from window.css.lua, by this class: F2's rules for its window.
@@ -320,6 +676,7 @@ local DestinationsWindow = react.RegisterWrapperRecipe("PgraceVehicleDestination
 		onClose = params.onClose,
 		expanded = expandedState:old(),
 		content = Destinations{
+			gameCtx = params.payload ~= nil and params.payload.toolParam ~= nil and params.payload.toolParam.gameCtx or makeToolParam().gameCtx,
 			expanded = expandedState:old(),
 			setExpanded = function(expanded : boolean)
 				remembered.expanded = expanded
@@ -330,16 +687,6 @@ local DestinationsWindow = react.RegisterWrapperRecipe("PgraceVehicleDestination
 end)
 
 local DestinationsTool = tool_react_util.registerToolWithWindow("PgraceVehicleDestination", WINDOW_ID, DestinationsWindow)
-
--- The tool machinery only reads gameCtx.windowContainer (and the button its tool stack); the mod-area plugin gets
--- no gameCtx, so build one from the game's defaults.
-local function makeToolParam() : ToolParam
-	local gameCtx = {
-		windowContainer = game_react_globals.getDefaultWindowContainer(),
-		toolStack = game_react_globals.getDefaultToolStack(),
-	} as GameContext
-	return { gameCtx = gameCtx }
-end
 
 local DestinationsButton = react.RegisterPluginRecipe(main_mod_button_area.MainModButtonAreaExtension, "PgraceVehicleDestinationButton", function() : TreeNodeId
 	return builtin.BoxLayout{

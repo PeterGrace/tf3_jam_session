@@ -4,6 +4,8 @@ global record PgraceVehicleDestinationScan
 	record Result
 		-- The counted cars: drawn ones only, or every driver found when onlyVisible is false.
 		entries : {PgraceVehicleDestinationTally.Entry}
+		-- The camera's look-at point when counted: where the cars were counted.
+		center : Vec3f
 		-- Street edges in the search circle around the camera, and its radius in metres.
 		edges : integer
 		radius : integer

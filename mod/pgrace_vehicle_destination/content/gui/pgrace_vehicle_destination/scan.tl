@@ -95,7 +95,8 @@ function scan.cars(onlyVisible : boolean) : PgraceVehicleDestinationScan.Result
 		api.type.ComponentType.BASE_EDGE_STREET)
 
 	local result : PgraceVehicleDestinationScan.Result = {
-		entries = {}, edges = #edges, radius = math.floor(radius + 0.5), moving = 0, drivers = 0, drawn = 0, ms = 0,
+		entries = {}, center = center, edges = #edges, radius = math.floor(radius + 0.5), moving = 0, drivers = 0, drawn = 0,
+		ms = 0,
 	}
 	local seen : {Engine.Entity : boolean} = {}
 	local simPersonSystem = api.engine.system.simPersonSystem

@@ -106,5 +106,30 @@ function data()
 		textAlignment = { 1, 0.5 },
 	})
 
+	-- The Town cell's pin, arrow toggle and name sit on one line, as the base table places its LocateButton
+	-- (line_react_util.css.lua).
+	a("Table::TableLayout R::PgraceVehicleDestinationTownCell Button", {
+		gravity = { 0, -1 },
+	})
+
+	-- The arrow's distance label (Commuter Compass arrow_label.css.lua). Its floating layout fills the screen, so the
+	-- label can go anywhere on it; without this it shrinks to the label and sits at the left edge.
+	local colorDefault = api.gui.genericRep.get(api.gui.genericRep.find("::/gui/main/default_colors.gres")).data
+	local layer = "R::PgraceVehicleDestinationArrowLabelLayer"
+	a(layer .. " FloatingLayout", {
+		gravity = { -1.0, -1.0 },
+	})
+	-- A light blue box with dark text, scoped to our layer; other callouts keep the game's look.
+	a(layer .. " R::DefaultCalloutWrapper R::Component!callout-content", {
+		backgroundColor1 = colorDefault.AccentLight,
+	})
+	a(layer .. " R::DefaultCalloutWrapper ImageView!callout-arrow", {
+		color = colorDefault.AccentLight,
+		gravity = { 0.5, 0 },
+	})
+	a(layer .. " R::PgraceVehicleDestinationArrowLabel TextView", {
+		color = colorDefault.NeutralDarkest,
+	})
+
 	return result
 end

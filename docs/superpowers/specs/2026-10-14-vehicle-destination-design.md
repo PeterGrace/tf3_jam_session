@@ -50,7 +50,15 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
     `line_react_util.makeEntityWindowButton(name, town)`, so a click opens the town window.
   - Numeric columns have short headers and weight 1 each: an unweighted column takes its widest content and can
     squeeze the weighted Town column (AGENTS.md "Tables").
-  - **Each Refresh rebuilds the table** (a new `localKey`), so it starts at the top. This is the approach Trim the
+    - **Pin and arrow** (as Commuter Compass): each Town cell starts with our own pin (`followEntity`; not the base
+    `LocateButton`, which other mods replace) and an arrow toggle. One arrow at a time, from the **counted spot** (the
+    camera's look-at point at the last count) to the town's centre (bounding-volume centre), styled as Cargo
+    Compass's actual flows, with a distance label at the top of its arc. Turning it on frames both ends, with the
+    view moved toward the camera so the arrow sits above the window. The arrow stays across refreshes (starting from
+    the new spot) while its town is listed, and goes when the window closes.
+  - The map action needs a fuller game context than the mod button area gives: the arrow builds one as `game.tl`
+    does (default renderer, notification cache, empty filters).
+- **Each Refresh rebuilds the table** (a new `localKey`), so it starts at the top. This is the approach Trim the
     Fat settled on.
 - **Unknown destinations:** cars whose destination town can't be resolved are counted in the summary line, not as
   a table row: the `DataTable` sorts every row by the clicked column, so a row can't be pinned to the bottom. They're
