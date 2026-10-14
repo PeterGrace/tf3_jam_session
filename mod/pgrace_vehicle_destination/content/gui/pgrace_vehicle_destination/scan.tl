@@ -8,6 +8,13 @@ local LOG_PREFIX = "[vehicle_destination] "
 
 -- Logged once per session, so a broken car doesn't flood the log on every refresh.
 local loggedCarError = false
+local loggedEdgeError = false
+
+-- Search radius around the camera's look-at point: a multiple of the eye's distance (a tilted view sees far past
+-- the look-at point), clamped.
+local RADIUS_PER_DISTANCE = 2.5
+local MIN_RADIUS = 300.0
+local MAX_RADIUS = 8000.0
 
 -- PROBE (remove before release): per-scan sample budgets, reset at the start of each scan.
 local probeDriversLeft = 0
@@ -117,12 +124,36 @@ function scan.visibleCars() : PgraceVehicleDestinationScan.Result
 	modeCounts = {} -- PROBE (remove before release)
 	visibleNonDrivers = 0 -- PROBE (remove before release)
 
+	-- SIM_ENTITY_MOVING can't be looped over ("Cannot loop over this component type"), so take the street edges
+	-- around the camera's look-at point and ask each for the people moving on it. The circle is generous; isVisible
+	-- decides what's on screen.
+	local center = api.gui.camera.getCenter()
+	local eye = api.gui.camera.getEye()
+	local dx, dy, dz = eye.x - center.x, eye.y - center.y, eye.z - center.z
+	local radius = math.min(math.max(math.sqrt(dx * dx + dy * dy + dz * dz) * RADIUS_PER_DISTANCE, MIN_RADIUS), MAX_RADIUS)
+	local edges = api.engine.util.octree.findEntitiesInCircle(api.type.Vec2f.new(center.x, center.y), radius,
+		api.type.ComponentType.BASE_EDGE_STREET)
+	local seen : {Engine.Entity : boolean} = {}
 	local moving : {Engine.Entity} = {}
-	api.engine.forEachEntityWithComponent(function(e : Engine.Entity)
-		moving[#moving + 1] = e
-	end, api.type.ComponentType.SIM_ENTITY_MOVING)
+	local simPersonSystem = api.engine.system.simPersonSystem
+	for __, edge in ipairs(edges) do
+		local ok, peopleOrError = pcall(simPersonSystem.getSimPersonsMovingForTransportNetwork, edge)
+		if ok then
+			for __, person in ipairs(peopleOrError as {Engine.Entity}) do
+				if not seen[person] then
+					seen[person] = true
+					moving[#moving + 1] = person
+				end
+			end
+		elseif not loggedEdgeError then
+			loggedEdgeError = true
+			debugPrint(LOG_PREFIX .. "edge " .. tostring(edge) .. " error: " .. tostring(peopleOrError))
+		end
+	end
 
-	local result : PgraceVehicleDestinationScan.Result = { entries = {}, moving = #moving, drivers = 0, ms = 0 }
+	local result : PgraceVehicleDestinationScan.Result = {
+		entries = {}, edges = #edges, radius = math.floor(radius + 0.5), moving = #moving, drivers = 0, ms = 0,
+	}
 	for __, person in ipairs(moving) do
 		local ok, err = pcall(readOne, person, result, drive)
 		if not ok and not loggedCarError then
@@ -141,7 +172,8 @@ function scan.visibleCars() : PgraceVehicleDestinationScan.Result
 	debugPrint(LOG_PREFIX .. "probe modes " .. table.concat(modes, " ") .. " DRIVE=" .. tostring(drive)
 		.. " visibleNonDrivers=" .. tostring(visibleNonDrivers))
 
-	debugPrint(LOG_PREFIX .. "scan: " .. tostring(result.moving) .. " moving, " .. tostring(result.drivers)
+	debugPrint(LOG_PREFIX .. "scan: " .. tostring(result.edges) .. " street edges in " .. tostring(result.radius)
+		.. " m, " .. tostring(result.moving) .. " moving, " .. tostring(result.drivers)
 		.. " drivers, " .. tostring(#result.entries) .. " visible, " .. tostring(result.ms) .. " ms (probe "
 		.. tostring(math.floor(probeMs + 0.5)) .. " ms)")
 	return result

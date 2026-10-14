@@ -3,7 +3,10 @@
 global record PgraceVehicleDestinationScan
 	record Result
 		entries : {PgraceVehicleDestinationTally.Entry}
-		-- Entities with SIM_ENTITY_MOVING.
+		-- Street edges in the search circle around the camera, and its radius in metres.
+		edges : integer
+		radius : integer
+		-- People moving on those edges.
 		moving : integer
 		-- Of those, people whose last move mode is DRIVE (on screen or not).
 		drivers : integer
