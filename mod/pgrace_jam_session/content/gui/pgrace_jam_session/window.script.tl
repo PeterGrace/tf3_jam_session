@@ -419,6 +419,29 @@ local function makeFlowLayerConfig(from : Vec3f, to : Vec3f) : LayerConfig
 	return layerConfig
 end
 
+-- The window's place on screen: docked bottom-centre, WINDOW_BOTTOM_GAP pixels above the bottom edge (window.css.lua's
+-- padding), its size from api.gui.byId.getSize (UI pixels, which matched screen pixels at 1920x1080). The margin
+-- covers the label's own size around its anchor.
+local WINDOW_BOTTOM_GAP = 64
+local LABEL_MARGIN = 40
+
+-- Main thread only.
+local function underWindow(x : number, y : number, viewport : Vec2i) : boolean
+	local ok, size = pcall(api.gui.byId.getSize, WINDOW_ID)
+	if not ok or size == nil then
+		return false
+	end
+	local window = size as Vec2f
+	if window.x <= 0 or window.y <= 0 then
+		return false
+	end
+	local left = 0.5 * (viewport.x - window.x) - LABEL_MARGIN
+	local right = 0.5 * (viewport.x + window.x) + LABEL_MARGIN
+	local bottom = viewport.y - WINDOW_BOTTOM_GAP + LABEL_MARGIN
+	local top = bottom - LABEL_MARGIN - window.y - LABEL_MARGIN
+	return x >= left and x <= right and y >= top and y <= bottom
+end
+
 local record ArrowLabelParams is IRecipeParamWithMeta
 	text : string
 end
@@ -458,6 +481,11 @@ local ArrowLabelLayer = react.RegisterRecipe("PgraceJamSessionArrowLabelLayer", 
 				return
 			end
 			local h, v = pixel.x / viewport.x, pixel.y / viewport.y
+			-- The label's layer is drawn above windows, so hide it where our window is (an expanded window covers
+			-- most of the screen, and no framing keeps the arrow's middle clear of it). Off-screen hides it.
+			if underWindow(pixel.x, pixel.y, viewport) then
+				h, v = -1, -1
+			end
 			local old = positionState:old()
 			if old == nil or old.x ~= h or old.y ~= v then
 				positionState:set(api.type.Vec2f.new(h, v))
