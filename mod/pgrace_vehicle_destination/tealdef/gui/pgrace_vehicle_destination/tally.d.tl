@@ -34,7 +34,7 @@ global record PgraceVehicleDestinationTally
 		total : integer
 	end
 
-	-- destinations[1] residence, [2] shopping, [3] work (engine.d.tl SimPerson). nil when nothing matches.
+	-- destinations[1] residence, [2] shopping, [3] work (engine.d.tl SimPerson). nil when nothing matches, and nil for a negative target.
 	purposeOf : function(target : integer, destinations : {integer}) : Purpose
 	group : function(entries : {Entry}) : Result
 	-- CLDR integer plural category ("one", "few", "many", "other") for a TF3 language code such as "pt_BR".

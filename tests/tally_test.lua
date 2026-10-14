@@ -9,6 +9,7 @@ t.test("purposeOf: matches residence, shopping, work", function()
 	t.eq(tally.purposeOf(40, destinations), nil, "no match")
 	t.eq(tally.purposeOf(nil, destinations), nil, "no target")
 	t.eq(tally.purposeOf(10, nil), nil, "no destinations")
+	t.eq(tally.purposeOf(-1, { 10, -1, 30 }), nil, "invalid target")
 end)
 
 t.test("group: one row per town with purpose counts", function()

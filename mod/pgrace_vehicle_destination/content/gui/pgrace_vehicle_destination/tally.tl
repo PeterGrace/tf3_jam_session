@@ -6,7 +6,7 @@ local type Row = PgraceVehicleDestinationTally.Row
 local type Result = PgraceVehicleDestinationTally.Result
 
 function tally.purposeOf(target : integer, destinations : {integer}) : Purpose
-	if target == nil or destinations == nil then
+	if target == nil or target < 0 or destinations == nil then
 		return nil
 	end
 	if destinations[1] == target then
