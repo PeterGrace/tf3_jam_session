@@ -111,13 +111,14 @@ local function makeSnapshot(entries : {PgraceVehicleDestinationTally.Entry}, onl
 	return snapshot
 end
 
--- Never throws. Runs on the main thread (see Destinations).
-local function takeCount() : Count
+-- Never throws. Runs on the main thread (see Destinations). `keepFrom`, if given, is kept as the counted spot (the
+-- arrow's start) instead of the camera's look-at point.
+local function takeCount(keepFrom : Vec3f) : Count
 	nextGeneration = nextGeneration + 1
 	local generation = nextGeneration
 	local ok, countOrError = pcall(function() : Count
 		local found = scan.cars()
-		local from = api.type.Vec3f.new(found.center.x, found.center.y, found.center.z)
+		local from = keepFrom or api.type.Vec3f.new(found.center.x, found.center.y, found.center.z)
 		local distance : {integer : number} = {}
 		local distanceText : {integer : string} = {}
 		local all = makeSnapshot(found.entries, false, from, generation, distance, distanceText)
@@ -258,8 +259,46 @@ local record ActiveOwnerApi
 	setActiveOwnerOverride : function(ReactRefWrap | boolean)
 end
 
+-- Where the camera is: its eye and look-at point. Compared at Refresh to tell whether the player moved the view.
+local record View
+	eye : {number}
+	center : {number}
+	distance : number
+end
+
+-- Main thread only (camera reads).
+local function currentView() : View
+	local eye = api.gui.camera.getEye()
+	local center = api.gui.camera.getCenter()
+	local dx, dy, dz = eye.x - center.x, eye.y - center.y, eye.z - center.z
+	return { eye = { eye.x, eye.y, eye.z }, center = { center.x, center.y, center.z },
+		distance = math.sqrt(dx * dx + dy * dy + dz * dz) }
+end
+
+-- Panning moves both points, zooming and rotating move the eye. A small tolerance (2% of the distance, plus 5 m)
+-- ignores drift from terrain following.
+local VIEW_TOLERANCE_SHARE = 0.02
+local VIEW_TOLERANCE_METRES = 5.0
+
+local function viewMoved(a : View, b : View) : boolean
+	local tolerance = VIEW_TOLERANCE_SHARE * a.distance + VIEW_TOLERANCE_METRES
+	for __, pair in ipairs({ { a.eye, b.eye }, { a.center, b.center } }) do
+		local p, q = pair[1], pair[2]
+		local dx, dy, dz = p[1] - q[1], p[2] - q[2], p[3] - q[3]
+		if math.sqrt(dx * dx + dy * dy + dz * dz) > tolerance then
+			return true
+		end
+	end
+	return false
+end
+
+-- Steps to wait after framing before reading where the camera came to rest (focusPosition animates).
+local SETTLE_STEPS = 90
+
 local record FlowParams
 	gameCtx : GameContext
+	-- Called with the camera's view once the arrow's framing has come to rest.
+	onViewSettled : function(View)
 	from : Vec3f
 	town : Engine.Entity
 	-- Part of the action key: a new count (a new starting point) needs a fresh mount.
@@ -568,6 +607,8 @@ local FlowAction = react.RegisterRecipe("PgraceVehicleDestinationFlowAction", fu
 		end
 		cacheRef:set({ key = key, action = action })
 	end
+	-- Steps left until the framed view is read (nil: not waiting).
+	local settleRef : ReactRefT<integer> = react.useRef(nil)
 	-- The camera moves on the main thread: the shift reads world2Screen, restricted during the react step.
 	react.onStep(function()
 		local ends = frameRef:get()
@@ -582,6 +623,22 @@ local FlowAction = react.RegisterRecipe("PgraceVehicleDestinationFlowAction", fu
 					debugPrint(LOG_PREFIX .. "camera move failed: " .. tostring(err))
 				end
 			end, "PgraceVehicleDestinationFrameCamera")
+			settleRef:set(SETTLE_STEPS)
+		end
+		local steps = settleRef:get()
+		if steps ~= nil then
+			if steps > 0 then
+				settleRef:set(steps - 1)
+			else
+				settleRef:set(nil)
+				-- The framed view becomes the one Refresh compares with, so a refresh without moving keeps the arrow.
+				react.enqueueJoin(function()
+					local ok, view = pcall(currentView)
+					if ok and view ~= nil then
+						params.onViewSettled(view as View)
+					end
+				end, "PgraceVehicleDestinationViewSettled")
+			end
 		end
 	end)
 
@@ -638,6 +695,8 @@ end
 
 local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", function(params : ContentParams) : TreeNodeId
 	local countState : ReactStateT<Count> = react.useState(nil)
+	-- The view at the last count, or where the arrow's framing came to rest since.
+	local viewRef : ReactRefT<View> = react.useRef(nil)
 	-- The town whose arrow is on the map; one at a time. It stays across refreshes and starts from the new count's spot.
 	local selectionState : ReactStateT<Engine.Entity> = react.useState(nil)
 	local sortState = react.useState(remembered.sort) as ReactStateT<Sort>
@@ -661,7 +720,22 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 		if pendingRef:get() then
 			pendingRef:set(false)
 			react.enqueueJoin(function()
-				countState:set(takeCount())
+				-- With an arrow shown, Refresh cancels it if the player moved the view since; otherwise it keeps the
+				-- arrow and its start, and only the counts change.
+				local viewOk, viewOrError = pcall(currentView)
+				local view = viewOk and viewOrError as View or nil
+				local keepFrom : Vec3f = nil
+				local previous = countState:old()
+				if selectionState:old() ~= nil and previous ~= nil then
+					local before = viewRef:get()
+					if view == nil or before == nil or viewMoved(before, view) then
+						selectionState:set(nil)
+					else
+						keepFrom = previous.all.from
+					end
+				end
+				countState:set(takeCount(keepFrom))
+				viewRef:set(view)
 			end, "PgraceVehicleDestinationScan")
 		end
 	end)
@@ -750,7 +824,8 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 	local town = selectionState:old()
 	-- `all` holds every town of either list, so the eye doesn't take the arrow away.
 	if town ~= nil and snapshot ~= nil and snapshot.from ~= nil and count.all.rows[town] ~= nil then
-		body[#body + 1] = FlowAction{ gameCtx = params.gameCtx, from = snapshot.from, town = town, generation = snapshot.generation }
+		body[#body + 1] = FlowAction{ gameCtx = params.gameCtx,
+			onViewSettled = function(view : View) viewRef:set(view) end, from = snapshot.from, town = town, generation = snapshot.generation }
 	end
 
 	-- F2's layout (StatisticsContainer), as Trim the Fat: a tab widget filling the window, here with one tab, and the

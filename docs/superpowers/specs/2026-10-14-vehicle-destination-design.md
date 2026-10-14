@@ -45,6 +45,10 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
   eye only switches lists: it never counts again, and never moves the counted spot. (Recounting on each toggle, from
   wherever an arrow had moved the camera, made the view creep.)
 - **Counted spot:** set on open and on Refresh only, from the camera's look-at point then.
+- **Refresh with an arrow shown:** if the player moved the view (eye or look-at point off by more than 2% of the
+  distance + 5 m) since the last count, or since the arrow's framing came to rest (read 90 steps after it started),
+  the arrow is cancelled and the count starts from the new spot. If not, the arrow and its start stay, and only the
+  counts change (counted from what's on screen, which after framing is the arrow's whole route).
 - **Summary line** above the table: "{count} cars in view" (eye off: "{count} cars nearby"; one key per plural form,
   as in Commuter Compass), followed by " · {count} destination unknown" when there are any.
 - **Table:** a `builtin.DataTable` with the columns Town, Cars, Home, Work, Shop and Distance. It starts sorted by Cars,
