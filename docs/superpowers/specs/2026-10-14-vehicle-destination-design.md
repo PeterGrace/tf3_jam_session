@@ -30,7 +30,7 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
 
 ```
 ┌[Car destinations]──────────── [👁 ⟳] [⤢] ✕┐
-│ 42 cars in view · 7 destination unknown     │
+│ 42 cars in view · Destination unknown: 7    │
 ├──────────────┬──────┬──────┬──────┬────────┤
 │ Town         │ Cars │ Home │ Work │ Shop   │
 ├──────────────┼──────┼──────┼──────┼────────┤
@@ -51,7 +51,7 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
   the arrow is cancelled and the count starts from the new spot. If not, the arrow and its start stay, and only the
   counts change (counted from what's on screen, which after framing is the arrow's whole route).
 - **Summary line** above the table: "{count} cars in view" (eye off: "{count} cars nearby"; one key per plural form,
-  as in Commuter Compass), followed by " · {count} destination unknown" when there are any.
+  as in Commuter Compass), followed by " · Destination unknown: {count}" when there are any.
 - **Table:** a `builtin.DataTable` with the columns listed below. It starts sorted by Cars,
   descending, and every column sorts on a header click.
   - The Town column has a weight and a tooltip with the full name. Its cells are
@@ -80,7 +80,7 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
 - **Unknown destinations:** cars whose destination town can't be resolved are counted in the summary line, not as
   a table row: the `DataTable` sorts every row by the clicked column, so a row can't be pinned to the bottom. They're
   included in the total.
-- **Empty view:** instead of the table, "No cars in view. Move the camera to a road and press Refresh."
+- **Empty view:** instead of the table, "No cars in view. Move the camera to a road and count again."
 - **Error:** "Error (see log)", with the error logged under a `[vehicle_destination]` prefix.
 
 ## §2 Data

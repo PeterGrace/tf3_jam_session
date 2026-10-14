@@ -951,13 +951,13 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 	elseif snapshot.error then
 		body[#body + 1] = textRow(_("Error (see log)"), "font-scale-body, negative")
 	elseif snapshot.result.total == 0 then
-		body[#body + 1] = textRow(onlyVisible and _("No cars in view. Move the camera to a road and press Refresh.")
-			or _("No cars nearby. Move the camera to a road and press Refresh."), "font-scale-body")
+		body[#body + 1] = textRow(onlyVisible and _("No cars in view. Move the camera to a road and count again.")
+			or _("No cars nearby. Move the camera to a road and count again."), "font-scale-body")
 	else
 		local summary = carsText(snapshot.result.total, onlyVisible)
 		local unknown = snapshot.result.unknown
 		if unknown ~= nil then
-			summary = summary .. " · " .. fill(_("{count} destination unknown"), { count = formatCount(unknown.cars) })
+			summary = summary .. " · " .. fill(_("Destination unknown: {count}"), { count = formatCount(unknown.cars) })
 		end
 		body[#body + 1] = textRow(summary, "font-scale-annotation")
 		if #snapshot.keys > 0 then
