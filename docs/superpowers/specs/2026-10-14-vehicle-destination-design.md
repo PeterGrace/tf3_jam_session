@@ -20,8 +20,8 @@ at a time.
 
 Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that opens a window"):
 
-- **Button:** a plugin on `::MainModButtonAreaExtension`, a `builtin.ToolButton` with the tooltip
-  "Vehicle Destination".
+- **Button:** a plugin on `::MainModButtonAreaExtension`, a `builtin.ToolButton` (car icon) with the tooltip
+  "Car destinations: where the cars on screen are heading".
 - **Window:** `tool_react_util.registerToolWithWindow`, with a `builtin.Window` wrapper recipe. It's sized and
   docked like F2 through a mod stylesheet keyed on a window class, with `compact = true` and a single-tab
   `TabWidget` for the title. The button shows pressed while the window is open; clicking it again, ✕ and Esc
@@ -43,7 +43,8 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
   descending, and every column sorts on a header click.
   - The Town column has a weight and a tooltip with the full name. Its cells are
     `line_react_util.makeEntityWindowButton(name, town)`, so a click opens the town window.
-  - Numeric columns are narrow, with no weight and short headers.
+  - Numeric columns have short headers and weight 1 each: an unweighted column takes its widest content and can
+    squeeze the weighted Town column (AGENTS.md "Tables").
   - **Each Refresh rebuilds the table** (a new `localKey`), so it starts at the top. This is the approach Trim the
     Fat settled on.
 - **Unknown destinations:** cars whose destination town can't be resolved are counted in a line below the table
