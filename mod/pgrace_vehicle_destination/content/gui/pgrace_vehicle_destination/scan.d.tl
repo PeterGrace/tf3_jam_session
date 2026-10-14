@@ -11,6 +11,6 @@ global record PgraceVehicleDestinationScan
 		ms : integer
 	end
 
-	-- Throws if the engine can't be read at all (or MoveMode.DRIVE is missing); each entity is read in its own pcall; a car that fails on its own becomes an unknown entry.
+	-- Throws if the engine can't be read at all (or MoveMode.DRIVE is missing); each entity is read in its own pcall; a car whose destination can't be read becomes an unknown entry, and an entity that can't be read at all is skipped.
 	visibleCars : function() : Result
 end

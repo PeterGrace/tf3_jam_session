@@ -57,7 +57,7 @@ local function probeDetails(person : Engine.Entity, simPerson : Engine.Component
 		.. " SIM_ENTITY_AT_VEHICLE=" .. has(c.SIM_ENTITY_AT_VEHICLE) .. " LAND_VEHICLE=" .. has(c.LAND_VEHICLE))
 end
 
-local function readOne(person : Engine.Entity, result : PgraceVehicleDestinationScan.Result, drive : any) : boolean
+local function readOne(person : Engine.Entity, result : PgraceVehicleDestinationScan.Result, drive : MoveMode) : boolean
 	if not api.engine.entityExists(person) then
 		return true
 	end
@@ -72,11 +72,11 @@ local function readOne(person : Engine.Entity, result : PgraceVehicleDestination
 	if simPerson.lastMoveMode == drive then
 		result.drivers = result.drivers + 1
 		if probeDriversLeft > 0 then -- PROBE (remove before release)
-			probeDriversLeft = probeDriversLeft - 1
-			local t1 = os.clock()
-			pcall(probeDetails, person, simPerson)
-			probeMs = probeMs + (os.clock() - t1) * 1000
-		end
+			probeDriversLeft = probeDriversLeft - 1 -- PROBE (remove before release)
+			local t1 = os.clock() -- PROBE (remove before release)
+			pcall(probeDetails, person, simPerson) -- PROBE (remove before release)
+			probeMs = probeMs + (os.clock() - t1) * 1000 -- PROBE (remove before release)
+		end -- PROBE (remove before release)
 		if api.gui.byEntity.isVisible(person) then
 			local ok, entryOrError = pcall(entryFor, simPerson)
 			if ok then
@@ -89,16 +89,16 @@ local function readOne(person : Engine.Entity, result : PgraceVehicleDestination
 				end
 			end
 		end
-	else
+	else -- PROBE (remove before release): the whole else branch
 		local t2 = os.clock() -- PROBE (remove before release)
-		if probeOthersLeft > 0 then
-			probeOthersLeft = probeOthersLeft - 1
-			pcall(probeDetails, person, simPerson)
-		end
-		if api.gui.byEntity.isVisible(person) then
-			visibleNonDrivers = visibleNonDrivers + 1
-		end
-		probeMs = probeMs + (os.clock() - t2) * 1000
+		if probeOthersLeft > 0 then -- PROBE (remove before release)
+			probeOthersLeft = probeOthersLeft - 1 -- PROBE (remove before release)
+			pcall(probeDetails, person, simPerson) -- PROBE (remove before release)
+		end -- PROBE (remove before release)
+		if api.gui.byEntity.isVisible(person) then -- PROBE (remove before release)
+			visibleNonDrivers = visibleNonDrivers + 1 -- PROBE (remove before release)
+		end -- PROBE (remove before release)
+		probeMs = probeMs + (os.clock() - t2) * 1000 -- PROBE (remove before release)
 	end
 	return true
 end
