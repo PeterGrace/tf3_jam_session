@@ -52,16 +52,42 @@ local record Snapshot
 	generation : integer
 	-- Where the cars were counted (the camera's look-at point); the arrows start here.
 	from : Vec3f
+	-- rowKey -> straight-line metres from `from` to the town's centre (nil if unknown), and its text.
+	distance : {integer : number}
+	distanceText : {integer : string}
 	-- The town whose arrow is shown, or nil. Set by the window when it renders, so cells can read and change it.
 	selectionState : ReactStateT<Engine.Entity>
 end
 
 local nextGeneration = 0
 
+local function planarDistance(a : Vec3f, b : Vec3f) : number
+	local dx, dy = b.x - a.x, b.y - a.y
+	return math.sqrt(dx * dx + dy * dy)
+end
+
+-- Centre of the town's bounding volume, as the base town window computes it.
+local function townPosition(town : Engine.Entity) : Vec3f
+	local bv = api.engine.getComponent(town, api.type.ComponentType.BOUNDING_VOLUME) as Engine.Component.BoundingVolume
+	if bv == nil then
+		return nil
+	end
+	return api.type.Vec3f.new(0.5 * (bv.bbox.min.x + bv.bbox.max.x), 0.5 * (bv.bbox.min.y + bv.bbox.max.y), bv.bbox.max.z)
+end
+
+local function formatDistance(metres : number) : string
+	local ok, text = pcall(api.util.formatLength, metres)
+	if ok and text ~= nil then
+		return text as string
+	end
+	return tostring(math.floor(metres + 0.5)) .. " m"
+end
+
 -- Never throws. Runs on the main thread (see Destinations).
 local function takeSnapshot(onlyVisible : boolean) : Snapshot
 	nextGeneration = nextGeneration + 1
-	local snapshot : Snapshot = { error = false, rows = {}, keys = {}, generation = nextGeneration }
+	local snapshot : Snapshot = { error = false, rows = {}, keys = {}, generation = nextGeneration, distance = {},
+		distanceText = {} }
 	local ok, err = pcall(function() : boolean
 		local found = scan.cars(onlyVisible)
 		snapshot.from = api.type.Vec3f.new(found.center.x, found.center.y, found.center.z)
@@ -69,6 +95,13 @@ local function takeSnapshot(onlyVisible : boolean) : Snapshot
 		for __, row in ipairs(snapshot.result.rows) do
 			snapshot.rows[row.town] = row
 			snapshot.keys[#snapshot.keys + 1] = row.town
+			-- Formatted here, once per count, not in the cells.
+			local ok, position = pcall(townPosition, row.town)
+			if ok and position ~= nil then
+				local metres = planarDistance(snapshot.from, position as Vec3f)
+				snapshot.distance[row.town] = metres
+				snapshot.distanceText[row.town] = formatDistance(metres)
+			end
 		end
 		return true
 	end)
@@ -207,28 +240,6 @@ end
 local record FlowCache
 	key : string
 	action : function() : TreeNodeId
-end
-
-local function planarDistance(a : Vec3f, b : Vec3f) : number
-	local dx, dy = b.x - a.x, b.y - a.y
-	return math.sqrt(dx * dx + dy * dy)
-end
-
--- Centre of the town's bounding volume, as the base town window computes it.
-local function townPosition(town : Engine.Entity) : Vec3f
-	local bv = api.engine.getComponent(town, api.type.ComponentType.BOUNDING_VOLUME) as Engine.Component.BoundingVolume
-	if bv == nil then
-		return nil
-	end
-	return api.type.Vec3f.new(0.5 * (bv.bbox.min.x + bv.bbox.max.x), 0.5 * (bv.bbox.min.y + bv.bbox.max.y), bv.bbox.max.z)
-end
-
-local function formatDistance(metres : number) : string
-	local ok, text = pcall(api.util.formatLength, metres)
-	if ok and text ~= nil then
-		return text as string
-	end
-	return tostring(math.floor(metres + 0.5)) .. " m"
 end
 
 -- Cargo Compass's style for actual flows: the base cargo-flow colours, animated, with the passenger icon.
@@ -431,6 +442,11 @@ local HomeCell = makeNumberCell("PgraceVehicleDestinationHomeCell", home)
 local WorkCell = makeNumberCell("PgraceVehicleDestinationWorkCell", work)
 local ShopCell = makeNumberCell("PgraceVehicleDestinationShopCell", shop)
 
+local DistanceCell = react.RegisterRecipe("PgraceVehicleDestinationDistanceCell", function(params : Builtin.TableCellParam) : TreeNodeId
+	react.setStyleClasses(RIGHT_ALIGNED)
+	return textRow((params.userParam as Snapshot).distanceText[params.rowKey] or "–", "font-scale-body")
+end)
+
 local record Sort
 	column : integer
 	ascending : boolean
@@ -462,6 +478,13 @@ local function makeTable(snapshot : Snapshot, sort : Sort, onSort : function(int
 			number(_("Home"), _("Driving home"), HomeCell, home),
 			number(_("Work"), _("Driving to work"), WorkCell, work),
 			number(_("Shop"), _("Driving to the shops"), ShopCell, shop),
+			builtin.ColumnDesc{ name = _("Distance"),
+				tooltip = _("Straight-line distance from where the cars were counted to the town centre"),
+				recipe = DistanceCell, weight = 1.2, headerStyleClass = RIGHT_ALIGNED,
+				-- Unknown distances sort last when nearest-first.
+				getCompareValue = function(rowKey : integer) : any
+					return snapshot.distance[rowKey] or math.huge
+				end },
 		},
 		rowKeys = snapshot.keys,
 		userParam = snapshot,

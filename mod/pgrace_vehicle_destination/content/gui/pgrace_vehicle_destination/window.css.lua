@@ -34,11 +34,11 @@ function data()
 		padding = { 8, 8, 12, 8 },
 	})
 
-	-- Narrower than F2: five columns. Expanded takes most of the screen height, as F2.
+	-- Narrower than F2: six columns. Expanded takes most of the screen height, as F2.
 	local sizes = {
-		["!font-small"] = { collapsed = { 560, 380 }, expanded = { 560, "80vh" } },
-		["!font-medium"] = { collapsed = { 640, 380 }, expanded = { 640, "85vh" } },
-		["!font-large"] = { collapsed = { 760, 380 }, expanded = { 760, "90vh" } },
+		["!font-small"] = { collapsed = { 640, 380 }, expanded = { 640, "80vh" } },
+		["!font-medium"] = { collapsed = { 730, 380 }, expanded = { 730, "85vh" } },
+		["!font-large"] = { collapsed = { 860, 380 }, expanded = { 860, "90vh" } },
 	}
 	for font, size in pairs(sizes) do
 		a(font .. " " .. window, {

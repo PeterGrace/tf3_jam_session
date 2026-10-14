@@ -44,7 +44,7 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
   the search circle that aren't drawn (useful zoomed far out). Toggling it rescans.
 - **Summary line** above the table: "{count} cars in view" (eye off: "{count} cars nearby"; one key per plural form,
   as in Commuter Compass), followed by " · {count} destination unknown" when there are any.
-- **Table:** a `builtin.DataTable` with the columns Town, Cars, Home, Work and Shop. It starts sorted by Cars,
+- **Table:** a `builtin.DataTable` with the columns Town, Cars, Home, Work, Shop and Distance. It starts sorted by Cars,
   descending, and every column sorts on a header click.
   - The Town column has a weight and a tooltip with the full name. Its cells are
     `line_react_util.makeEntityWindowButton(name, town)`, so a click opens the town window.
@@ -58,6 +58,9 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
     the new spot) while its town is listed, and goes when the window closes.
   - The map action needs a fuller game context than the mod button area gives: the arrow builds one as `game.tl`
     does (default renderer, notification cache, empty filters).
+- **Distance column** (last, so Cars stays the default sort): the straight-line distance from the counted spot to the
+  town's centre, as the arrow's label, formatted once per count with `api.util.formatLength`. "–" if the town has no
+  position; those sort last when nearest-first.
 - **A header click rebuilds the table** in the new order (new `localKey`, `initialSortColumn` = the new sort), so the
   list starts at the top, as Trim the Fat. The sort is remembered between openings, like the eye.
 - **Each Refresh rebuilds the table** (a new `localKey`), so it starts at the top. This is the approach Trim the
