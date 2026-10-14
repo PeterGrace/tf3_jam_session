@@ -1,6 +1,8 @@
 {
     "archives": null,
     "files": [
+        "gui/pgrace_vehicle_destination/scan.d.tl",
+        "gui/pgrace_vehicle_destination/scan.tl",
         "gui/pgrace_vehicle_destination/tally.d.tl",
         "gui/pgrace_vehicle_destination/tally.tl"
     ]
