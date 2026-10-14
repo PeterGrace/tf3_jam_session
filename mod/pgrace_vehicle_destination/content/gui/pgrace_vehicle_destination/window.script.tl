@@ -386,7 +386,12 @@ local HomeCell = makeNumberCell("PgraceVehicleDestinationHomeCell", home)
 local WorkCell = makeNumberCell("PgraceVehicleDestinationWorkCell", work)
 local ShopCell = makeNumberCell("PgraceVehicleDestinationShopCell", shop)
 
-local function makeTable(snapshot : Snapshot) : TreeNodeId
+local record Sort
+	column : integer
+	ascending : boolean
+end
+
+local function makeTable(snapshot : Snapshot, sort : Sort, onSort : function(integer, boolean)) : TreeNodeId
 	local function by(valueOf : function(Row) : integer) : function(integer) : any
 		return function(rowKey : integer) : any
 			local row = snapshot.rows[rowKey]
@@ -399,7 +404,9 @@ local function makeTable(snapshot : Snapshot) : TreeNodeId
 			headerStyleClass = RIGHT_ALIGNED, getCompareValue = by(valueOf) }
 	end
 	return builtin.DataTable{
-		meta = { localKey = "towns_" .. tostring(snapshot.generation) },
+		-- The sort is part of the key: see onSort in Destinations.
+		meta = { localKey = "towns_" .. tostring(snapshot.generation) .. "_" .. tostring(sort.column)
+			.. (sort.ascending and "a" or "d") },
 		columns = {
 			builtin.ColumnDesc{ name = _("Town"), recipe = TownCell, weight = 3,
 				getCompareValue = function(rowKey : integer) : any
@@ -413,7 +420,8 @@ local function makeTable(snapshot : Snapshot) : TreeNodeId
 		},
 		rowKeys = snapshot.keys,
 		userParam = snapshot,
-		initialSortColumn = { 2, false },
+		initialSortColumn = { sort.column, sort.ascending },
+		onSortColumnChange = onSort,
 	}
 end
 
@@ -502,8 +510,10 @@ end)
 local record Remembered
 	onlyVisible : boolean
 	expanded : boolean
+	sort : Sort
 end
-local remembered : Remembered = { onlyVisible = true, expanded = false }
+-- Sorted by Cars, most first.
+local remembered : Remembered = { onlyVisible = true, expanded = false, sort = { column = 2, ascending = false } }
 
 local record ContentParams
 	gameCtx : GameContext
@@ -515,6 +525,17 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 	local snapshotState : ReactStateT<Snapshot> = react.useState(nil)
 	-- The town whose arrow is on the map; one at a time. It stays across refreshes and starts from the new count's spot.
 	local selectionState : ReactStateT<Engine.Entity> = react.useState(nil)
+	local sortState = react.useState(remembered.sort) as ReactStateT<Sort>
+	local sort = sortState:old()
+	-- A header click builds a new table, already in the new order, as Trim the Fat: re-sorting the existing table keeps
+	-- its current row (the last row clicked, else the first) in view, which leaves the list scrolled partway down. A
+	-- fresh table starts at the top. The counts stay; only the order changes.
+	local function onSort(column : integer, ascending : boolean)
+		if column ~= sort.column or ascending ~= sort.ascending then
+			remembered.sort = { column = column, ascending = ascending }
+			sortState:set(remembered.sort)
+		end
+	end
 	local onlyVisibleState = react.useState(remembered.onlyVisible) as ReactStateT<boolean>
 	local onlyVisible = onlyVisibleState:old()
 	-- A scan is due: on open, after Refresh and when the eye changes. isVisible reads the camera, which may be
@@ -608,7 +629,7 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 		end
 		body[#body + 1] = textRow(summary, "font-scale-annotation")
 		if #snapshot.keys > 0 then
-			body[#body + 1] = makeTable(snapshot)
+			body[#body + 1] = makeTable(snapshot, sort, onSort)
 		end
 	end
 	local town = selectionState:old()

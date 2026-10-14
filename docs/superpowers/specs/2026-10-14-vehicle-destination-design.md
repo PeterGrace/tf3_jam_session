@@ -58,6 +58,8 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
     the new spot) while its town is listed, and goes when the window closes.
   - The map action needs a fuller game context than the mod button area gives: the arrow builds one as `game.tl`
     does (default renderer, notification cache, empty filters).
+- **A header click rebuilds the table** in the new order (new `localKey`, `initialSortColumn` = the new sort), so the
+  list starts at the top, as Trim the Fat. The sort is remembered between openings, like the eye.
 - **Each Refresh rebuilds the table** (a new `localKey`), so it starts at the top. This is the approach Trim the
     Fat settled on.
 - **Unknown destinations:** cars whose destination town can't be resolved are counted in the summary line, not as
