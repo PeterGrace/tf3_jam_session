@@ -69,8 +69,9 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
     start if the view didn't move, and drops it if the view moved or the trip is no longer counted (see "Refresh with
     an arrow shown"). It goes when the window closes.
   - Turning an arrow on **shrinks an expanded window** first (user's choice): expanded, the window covers most of the
-    screen and the framed arrow sat behind it. The distance label is also hidden wherever it would fall on the window
-    (its layer draws above windows; window rect from `api.gui.byId.getSize`, docked bottom-centre 64 px up).
+    screen and the framed arrow sat behind it. **Expanding turns the arrow off** (user's choice): the label's layer
+    draws above windows, so it sat on the table. Hiding the label where `api.gui.byId.getSize(windowId)` said the
+    window was didn't work in-game (not investigated).
   - The map action needs a fuller game context than the mod button area gives: the arrow builds one at module level
     (default renderer, a notification cache refreshed on the main thread, empty filters); hooks crashed the UI.
 - **Columns:** From | To | Cars | Home | Work | Shop | Trip | Here (user's choice: both distances, arrow unchanged).
