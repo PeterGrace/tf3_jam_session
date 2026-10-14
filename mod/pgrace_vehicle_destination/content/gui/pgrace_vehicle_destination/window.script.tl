@@ -30,7 +30,7 @@ local CAMERA_DISTANCE_FACTOR = 1.6
 local CAMERA_MIN_DISTANCE = 500
 local CAMERA_MAX_DISTANCE = 4000
 -- How far to move the view toward the camera, as a fraction of the camera distance, so the arrow sits in the map area
--- above our window (docked bottom-centre, about the lower 40% of the screen). A first guess; tune in-game.
+-- above our window (docked bottom-centre, about the lower 40% of the screen). Looked right in-game.
 local CAMERA_WINDOW_SHIFT = 0.2
 -- The cargo-flow arrow is drawn as an arc this high (as a share of its length); the label sits on its top
 -- (Commuter Compass, measured by eye).
@@ -62,8 +62,8 @@ local record Snapshot
 	-- rowKey -> straight-line metres from the origin town's centre to the destination's, and its text ("Trip").
 	trip : {integer : number}
 	tripText : {integer : string}
-	-- The town whose arrow is shown, or nil. Set by the window when it renders, so cells can read and change it.
-	selectionState : ReactStateT<Engine.Entity>
+	-- The row key (trip) whose arrow is shown, or nil. Set by the window when it renders, so cells can read and change it.
+	selectionState : ReactStateT<integer>
 end
 
 -- One count (on open and on Refresh). The eye only picks a list, so toggling it never counts again or moves the
@@ -74,6 +74,22 @@ local record Count
 end
 
 local nextGeneration = 0
+
+-- react.enqueueJoin without a pcall around it (react.lua doExecute), and a join can run just after its recipe has
+-- unmounted (the window closed mid-count): an error there would take down the whole UI. Logged once per scope.
+local loggedJoinError : {string : boolean} = {}
+local function safeJoin(fn : function(), scope : string)
+	react.enqueueJoin(function()
+		local ok, err = pcall(function() : boolean
+			fn()
+			return true
+		end)
+		if not ok and not loggedJoinError[scope] then
+			loggedJoinError[scope] = true
+			debugPrint(LOG_PREFIX .. scope .. " error: " .. tostring(err))
+		end
+	end, scope)
+end
 
 local function planarDistance(a : Vec3f, b : Vec3f) : number
 	local dx, dy = b.x - a.x, b.y - a.y
@@ -370,7 +386,7 @@ end
 -- Steps to wait after framing before reading where the camera came to rest (focusPosition animates).
 local SETTLE_STEPS = 90
 
-local record FlowParams
+local record FlowParams is IRecipeParamWithMeta
 	gameCtx : GameContext
 	-- Called with the camera's view once the arrow's framing has come to rest.
 	onViewSettled : function(View)
@@ -429,7 +445,7 @@ local ArrowLabelLayer = react.RegisterRecipe("PgraceVehicleDestinationArrowLabel
 	local positionState : ReactStateT<Vec2f> = react.useState(nil)
 	react.onStep(function()
 		-- world2Screen is restricted during the react step, so it runs in a join on the main thread.
-		react.enqueueJoin(function()
+		safeJoin(function()
 			local ok, point = pcall(api.gui.camera.world2Screen, top)
 			local sizeOk, size = pcall(api.gui.camera.getSize)
 			if not ok or not sizeOk or point == nil or size == nil then
@@ -708,7 +724,7 @@ local FlowAction = react.RegisterRecipe("PgraceVehicleDestinationFlowAction", fu
 		local ends = frameRef:get()
 		if ends ~= nil then
 			frameRef:set(nil)
-			react.enqueueJoin(function()
+			safeJoin(function()
 				local ok, err = pcall(function() : boolean
 					frameCamera(ends[1], ends[2])
 					return true
@@ -726,7 +742,7 @@ local FlowAction = react.RegisterRecipe("PgraceVehicleDestinationFlowAction", fu
 			else
 				settleRef:set(nil)
 				-- The framed view becomes the one Refresh compares with, so a refresh without moving keeps the arrow.
-				react.enqueueJoin(function()
+				safeJoin(function()
 					local ok, view = pcall(currentView)
 					if ok and view ~= nil then
 						params.onViewSettled(view as View)
@@ -757,12 +773,15 @@ local FlowAction = react.RegisterRecipe("PgraceVehicleDestinationFlowAction", fu
 		return true
 	end
 
+	-- Only with an action bound: without one (no town position), taking over the map would leave it ownerless.
 	local function activate()
-		setOverride(selfRef)
+		if cacheRef:get().action ~= nil then
+			setOverride(selfRef)
+		end
 	end
 
 	react.onMount(activate)
-	if changed and cacheRef:get().action ~= nil and selfRef:get() ~= nil then
+	if changed and selfRef:get() ~= nil then
 		activate()
 	end
 	react.onUnmount(function()
@@ -791,8 +810,9 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 	local countState : ReactStateT<Count> = react.useState(nil)
 	-- The view at the last count, or where the arrow's framing came to rest since.
 	local viewRef : ReactRefT<View> = react.useRef(nil)
-	-- The town whose arrow is on the map; one at a time. It stays across refreshes and starts from the new count's spot.
-	local selectionState : ReactStateT<Engine.Entity> = react.useState(nil)
+	-- The row key (trip) whose arrow is on the map; one at a time. Refresh keeps it, with its start, if the view
+	-- didn't move, and drops it if the view moved or the trip is no longer counted.
+	local selectionState : ReactStateT<integer> = react.useState(nil)
 	local sortState = react.useState(remembered.sort) as ReactStateT<Sort>
 	local sort = sortState:old()
 	-- A header click builds a new table, already in the new order, as Trim the Fat: re-sorting the existing table keeps
@@ -823,7 +843,7 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 		if pendingRef:get() then
 			pendingRef:set(false)
 			joinQueuedRef:set(true)
-			react.enqueueJoin(function()
+			safeJoin(function()
 				joinQueuedRef:set(false)
 				-- With an arrow shown, Refresh cancels it if the player moved the view since; otherwise it keeps the
 				-- arrow and its start, and only the counts change.
@@ -853,7 +873,7 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 			end, "PgraceVehicleDestinationScan")
 		elseif countingRef:get() ~= nil then
 			joinQueuedRef:set(true)
-			react.enqueueJoin(function()
+			safeJoin(function()
 				joinQueuedRef:set(false)
 				local counting = countingRef:get()
 				if counting == nil then
@@ -868,7 +888,14 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 				elseif doneOrError == true then
 					countingRef:set(nil)
 					progressState:set(nil)
-					countState:set(buildCount(scan.result(counting.job), counting.keepFrom))
+					local count = buildCount(scan.result(counting.job), counting.keepFrom)
+					countState:set(count)
+					-- A selected trip that's no longer counted is dropped, so it can't reappear (and move the camera) in
+					-- a later count.
+					local selected = selectionState:old()
+					if selected ~= nil and count.all.rows[selected] == nil then
+						selectionState:set(nil)
+					end
 				else
 					local percent = math.floor(100 * scan.progress(counting.job))
 					if percent ~= progressState:old() then
@@ -969,7 +996,9 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 	local selected = selectionState:old()
 	local selectedRow = selected ~= nil and count ~= nil and count.all.rows[selected] or nil
 	if selectedRow ~= nil and snapshot ~= nil and snapshot.from ~= nil then
-		body[#body + 1] = FlowAction{ gameCtx = params.gameCtx,
+		-- A fixed key: the progress line comes and goes above it during a count, and a positional match would remount
+		-- the arrow (and frame the camera again) on every refresh.
+		body[#body + 1] = FlowAction{ meta = { localKey = "flow" }, gameCtx = params.gameCtx,
 			onViewSettled = function(view : View) viewRef:set(view) end, from = snapshot.from, town = selectedRow.town,
 			generation = snapshot.generation }
 	end

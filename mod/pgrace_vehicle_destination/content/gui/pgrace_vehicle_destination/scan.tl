@@ -130,9 +130,10 @@ local function readOne(person : Engine.Entity, result : PgraceVehicleDestination
 	if simPerson == nil or simPerson.lastMoveMode ~= drive then
 		return true
 	end
-	result.drivers = result.drivers + 1
-	-- A driving person is the car itself (it has LAND_VEHICLE and MOVE_PATH), so isVisible works on it.
+	-- A driving person is the car itself (it has LAND_VEHICLE and MOVE_PATH), so isVisible works on it. Counted as a
+	-- driver only once it's read, so drivers matches the entries.
 	local drawn = api.gui.byEntity.isVisible(person)
+	result.drivers = result.drivers + 1
 	if drawn then
 		result.drawn = result.drawn + 1
 	end

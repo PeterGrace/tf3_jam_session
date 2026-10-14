@@ -58,14 +58,15 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
     `line_react_util.makeEntityWindowButton(name, town)`, so a click opens the town window.
   - Numeric columns have short headers and weight 1 each: an unweighted column takes its widest content and can
     squeeze the weighted Town column (AGENTS.md "Tables").
-    - **Pin and arrow** (as Commuter Compass): each Town cell starts with our own pin (`followEntity`; not the base
+  - **Pin and arrow** (as Commuter Compass): each To cell starts with our own pin (`followEntity`; not the base
     `LocateButton`, which other mods replace) and an arrow toggle. One arrow at a time, from the **counted spot** (the
-    camera's look-at point at the last count) to the town's centre (bounding-volume centre), styled as Cargo
-    Compass's actual flows, with a distance label at the top of its arc. Turning it on (or switching town) frames both ends; a refresh moves its start but not the camera, with the
-    view moved toward the camera so the arrow sits above the window. The arrow stays across refreshes (starting from
-    the new spot) while its town is listed, and goes when the window closes.
-  - The map action needs a fuller game context than the mod button area gives: the arrow builds one as `game.tl`
-    does (default renderer, notification cache, empty filters).
+    camera's look-at point at the count) to the destination town's centre (bounding-volume centre), styled as Cargo
+    Compass's actual flows, with a distance label at the top of its arc. Turning it on (or switching trip) frames both
+    ends, with the view moved toward the camera so the arrow sits above the window. Refresh keeps the arrow and its
+    start if the view didn't move, and drops it if the view moved or the trip is no longer counted (see "Refresh with
+    an arrow shown"). It goes when the window closes.
+  - The map action needs a fuller game context than the mod button area gives: the arrow builds one at module level
+    (default renderer, a notification cache refreshed on the main thread, empty filters); hooks crashed the UI.
 - **Columns:** From | To | Cars | Home | Work | Shop | Trip | Here (user's choice: both distances, arrow unchanged).
   - **From:** the origin town's name (opens its window), or "Unknown". **To:** pin, arrow toggle and name, as before.
   - **Trip:** straight-line distance between the two towns' centres. **Here:** from the counted spot to To's centre,
