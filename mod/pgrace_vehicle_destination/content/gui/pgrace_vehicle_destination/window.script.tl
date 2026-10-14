@@ -42,8 +42,12 @@ local type ToolParam = ToolReactUtil.IToolParam
 local type Row = PgraceVehicleDestinationTally.Row
 local type Result = PgraceVehicleDestinationTally.Result
 
+-- One list for the table: a count's cars, all or only those drawn (the eye). Both lists of a count share its
+-- spot, generation and distances.
 local record Snapshot
 	error : boolean
+	-- Which list this is; part of the table's key.
+	onlyVisible : boolean
 	result : Result
 	-- rowKey (the town entity) -> row.
 	rows : {integer : Row}
@@ -57,6 +61,13 @@ local record Snapshot
 	distanceText : {integer : string}
 	-- The town whose arrow is shown, or nil. Set by the window when it renders, so cells can read and change it.
 	selectionState : ReactStateT<Engine.Entity>
+end
+
+-- One count (on open and on Refresh). The eye only picks a list, so toggling it never counts again or moves the
+-- counted spot.
+local record Count
+	visible : Snapshot
+	all : Snapshot
 end
 
 local nextGeneration = 0
@@ -83,33 +94,51 @@ local function formatDistance(metres : number) : string
 	return tostring(math.floor(metres + 0.5)) .. " m"
 end
 
--- Never throws. Runs on the main thread (see Destinations).
-local function takeSnapshot(onlyVisible : boolean) : Snapshot
-	nextGeneration = nextGeneration + 1
-	local snapshot : Snapshot = { error = false, rows = {}, keys = {}, generation = nextGeneration, distance = {},
-		distanceText = {} }
-	local ok, err = pcall(function() : boolean
-		local found = scan.cars(onlyVisible)
-		snapshot.from = api.type.Vec3f.new(found.center.x, found.center.y, found.center.z)
-		snapshot.result = tally.group(found.entries)
-		for __, row in ipairs(snapshot.result.rows) do
-			snapshot.rows[row.town] = row
-			snapshot.keys[#snapshot.keys + 1] = row.town
-			-- Formatted here, once per count, not in the cells.
-			local ok, position = pcall(townPosition, row.town)
-			if ok and position ~= nil then
-				local metres = planarDistance(snapshot.from, position as Vec3f)
-				snapshot.distance[row.town] = metres
-				snapshot.distanceText[row.town] = formatDistance(metres)
-			end
+local function makeSnapshot(entries : {PgraceVehicleDestinationTally.Entry}, onlyVisible : boolean, from : Vec3f,
+		generation : integer, distance : {integer : number}, distanceText : {integer : string}) : Snapshot
+	local kept : {PgraceVehicleDestinationTally.Entry} = {}
+	for __, entry in ipairs(entries) do
+		if entry.drawn or not onlyVisible then
+			kept[#kept + 1] = entry
 		end
-		return true
-	end)
-	if not ok then
-		debugPrint(LOG_PREFIX .. "scan error: " .. tostring(err))
-		snapshot.error = true
+	end
+	local snapshot : Snapshot = { error = false, onlyVisible = onlyVisible, result = tally.group(kept), rows = {},
+		keys = {}, generation = generation, from = from, distance = distance, distanceText = distanceText }
+	for __, row in ipairs(snapshot.result.rows) do
+		snapshot.rows[row.town] = row
+		snapshot.keys[#snapshot.keys + 1] = row.town
 	end
 	return snapshot
+end
+
+-- Never throws. Runs on the main thread (see Destinations).
+local function takeCount() : Count
+	nextGeneration = nextGeneration + 1
+	local generation = nextGeneration
+	local ok, countOrError = pcall(function() : Count
+		local found = scan.cars()
+		local from = api.type.Vec3f.new(found.center.x, found.center.y, found.center.z)
+		local distance : {integer : number} = {}
+		local distanceText : {integer : string} = {}
+		local all = makeSnapshot(found.entries, false, from, generation, distance, distanceText)
+		-- Every town of either list is in `all`. Formatted here, once per count, not in the cells.
+		for __, town in ipairs(all.keys) do
+			local positionOk, position = pcall(townPosition, town)
+			if positionOk and position ~= nil then
+				local metres = planarDistance(from, position as Vec3f)
+				distance[town] = metres
+				distanceText[town] = formatDistance(metres)
+			end
+		end
+		return { visible = makeSnapshot(found.entries, true, from, generation, distance, distanceText), all = all }
+	end)
+	if ok then
+		return countOrError as Count
+	end
+	debugPrint(LOG_PREFIX .. "scan error: " .. tostring(countOrError))
+	local failed : Snapshot = { error = true, rows = {}, keys = {}, generation = generation, distance = {},
+		distanceText = {} }
+	return { visible = failed, all = failed }
 end
 
 local function textRow(text : string, class : string) : TreeNodeId
@@ -476,7 +505,8 @@ local function makeTable(snapshot : Snapshot, sort : Sort, onSort : function(int
 	end
 	return builtin.DataTable{
 		-- The sort is part of the key: see onSort in Destinations.
-		meta = { localKey = "towns_" .. tostring(snapshot.generation) .. "_" .. tostring(sort.column)
+		meta = { localKey = "towns_" .. tostring(snapshot.generation) .. (snapshot.onlyVisible and "v" or "") .. "_"
+			.. tostring(sort.column)
 			.. (sort.ascending and "a" or "d") },
 		columns = {
 			builtin.ColumnDesc{ name = _("Town"), recipe = TownCell, weight = 3,
@@ -512,6 +542,9 @@ local FlowAction = react.RegisterRecipe("PgraceVehicleDestinationFlowAction", fu
 	local key = tostring(params.generation) .. ">" .. tostring(params.town)
 	local cacheRef : ReactRefT<FlowCache> = react.useRef(nil)
 	local frameRef : ReactRefT<{Vec3f}> = react.useRef(nil)
+	-- The camera frames the arrow when it's turned on or moved to another town, not when a refresh moves its start:
+	-- the camera then sits where the arrow put it, and following a new start each time made the view creep.
+	local framedTownRef : ReactRefT<Engine.Entity> = react.useRef(nil)
 	local changed = cacheRef:get() == nil or cacheRef:get().key ~= key
 	if changed then
 		local from = params.from
@@ -526,7 +559,10 @@ local FlowAction = react.RegisterRecipe("PgraceVehicleDestinationFlowAction", fu
 						param = { from = from, to = to as Vec3f, text = text } as ArrowLabelLayerParams,
 					}
 				end)
-			frameRef:set({ from, to as Vec3f })
+			if framedTownRef:get() ~= params.town then
+				framedTownRef:set(params.town)
+				frameRef:set({ from, to as Vec3f })
+			end
 		else
 			debugPrint(LOG_PREFIX .. "flow: no position for town " .. tostring(params.town))
 		end
@@ -601,7 +637,7 @@ local record ContentParams
 end
 
 local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", function(params : ContentParams) : TreeNodeId
-	local snapshotState : ReactStateT<Snapshot> = react.useState(nil)
+	local countState : ReactStateT<Count> = react.useState(nil)
 	-- The town whose arrow is on the map; one at a time. It stays across refreshes and starts from the new count's spot.
 	local selectionState : ReactStateT<Engine.Entity> = react.useState(nil)
 	local sortState = react.useState(remembered.sort) as ReactStateT<Sort>
@@ -617,16 +653,15 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 	end
 	local onlyVisibleState = react.useState(remembered.onlyVisible) as ReactStateT<boolean>
 	local onlyVisible = onlyVisibleState:old()
-	-- A scan is due: on open, after Refresh and when the eye changes. isVisible reads the camera, which may be
-	-- restricted during the react step (world2Screen is: "API is currently restricted", an uncatchable crash), so the
-	-- scan runs in a join on the main thread, as Commuter Compass's label position. It reads remembered, which the
-	-- eye's setter writes, so it never sees a stale value.
+	-- A count is due: on open and after Refresh, from wherever the camera is then. isVisible reads the camera, which may
+	-- be restricted during the react step (world2Screen is: "API is currently restricted", an uncatchable crash), so
+	-- the scan runs in a join on the main thread, as Commuter Compass's label position.
 	local pendingRef : ReactRefT<boolean> = react.useRef(true)
 	react.onStep(function()
 		if pendingRef:get() then
 			pendingRef:set(false)
 			react.enqueueJoin(function()
-				snapshotState:set(takeSnapshot(remembered.onlyVisible))
+				countState:set(takeCount())
 			end, "PgraceVehicleDestinationScan")
 		end
 	end)
@@ -645,7 +680,6 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 			onValueChange = function(value : integer)
 				remembered.onlyVisible = value == 1
 				onlyVisibleState:set(value == 1)
-				pendingRef:set(true)
 			end,
 		},
 		builtin.Button{
@@ -688,8 +722,10 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 		},
 	}
 
-	local snapshot = snapshotState:old()
-	if snapshot ~= nil then
+	local count = countState:old()
+	local snapshot : Snapshot = nil
+	if count ~= nil then
+		snapshot = onlyVisible and count.visible or count.all
 		snapshot.selectionState = selectionState
 	end
 	local body : {TreeNodeId} = {}
@@ -712,7 +748,8 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 		end
 	end
 	local town = selectionState:old()
-	if town ~= nil and snapshot ~= nil and snapshot.from ~= nil and snapshot.rows[town] ~= nil then
+	-- `all` holds every town of either list, so the eye doesn't take the arrow away.
+	if town ~= nil and snapshot ~= nil and snapshot.from ~= nil and count.all.rows[town] ~= nil then
 		body[#body + 1] = FlowAction{ gameCtx = params.gameCtx, from = snapshot.from, town = town, generation = snapshot.generation }
 	end
 

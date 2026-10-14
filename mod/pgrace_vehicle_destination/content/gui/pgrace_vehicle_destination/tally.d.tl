@@ -7,12 +7,13 @@ global record PgraceVehicleDestinationTally
 		"work"
 	end
 
-	-- One visible car. town is nil when the destination town can't be resolved; purpose is nil when the target
-	-- matches none of the person's destinations.
+	-- One car. town is nil when the destination town can't be resolved; purpose is nil when the target matches none
+	-- of the person's destinations. drawn: whether the game draws it on screen (set by scan; group ignores it).
 	record Entry
 		town : integer
 		townName : string
 		purpose : Purpose
+		drawn : boolean
 	end
 
 	record Row

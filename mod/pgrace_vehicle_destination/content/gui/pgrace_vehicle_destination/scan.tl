@@ -114,9 +114,8 @@ local function probeEdgeRatio(edge : Engine.Entity, center : Circle, distance : 
 	end
 end
 
--- A person on the street: counted if driving (and, with onlyVisible, drawn on screen). Returns whether it was drawn.
-local function readOne(person : Engine.Entity, result : PgraceVehicleDestinationScan.Result, drive : MoveMode,
-		onlyVisible : boolean) : boolean
+-- A person on the street: an entry if driving, flagged with whether it's drawn on screen. Returns whether it was drawn.
+local function readOne(person : Engine.Entity, result : PgraceVehicleDestinationScan.Result, drive : MoveMode) : boolean
 	if not api.engine.entityExists(person) then
 		return false
 	end
@@ -130,24 +129,22 @@ local function readOne(person : Engine.Entity, result : PgraceVehicleDestination
 	if drawn then
 		result.drawn = result.drawn + 1
 	end
-	if drawn or not onlyVisible then
-		local ok, entryOrError = pcall(entryFor, simPerson)
-		if ok then
-			result.entries[#result.entries + 1] = entryOrError as Entry
-		else
-			result.entries[#result.entries + 1] = { town = nil }
-			if not loggedCarError then
-				loggedCarError = true
-				debugPrint(LOG_PREFIX .. "car " .. tostring(person) .. " error: " .. tostring(entryOrError))
-			end
-		end
+	local ok, entryOrError = pcall(entryFor, simPerson)
+	local entry : Entry = { town = nil }
+	if ok then
+		entry = entryOrError as Entry
+	elseif not loggedCarError then
+		loggedCarError = true
+		debugPrint(LOG_PREFIX .. "car " .. tostring(person) .. " error: " .. tostring(entryOrError))
 	end
+	entry.drawn = drawn
+	result.entries[#result.entries + 1] = entry
 	return drawn
 end
 
 -- os.clock() is process CPU time, so it may over-read while worker threads are busy (Trim the Fat uses the same
 -- measure).
-function scan.cars(onlyVisible : boolean) : PgraceVehicleDestinationScan.Result
+function scan.cars() : PgraceVehicleDestinationScan.Result
 	local start = os.clock()
 	local drive = api.type["enum"].MoveMode.DRIVE
 	if drive == nil then
@@ -191,7 +188,7 @@ function scan.cars(onlyVisible : boolean) : PgraceVehicleDestinationScan.Result
 				if not seen[person] then
 					seen[person] = true
 					result.moving = result.moving + 1
-					local readOk, drawnOrError = pcall(readOne, person, result, drive, onlyVisible)
+					local readOk, drawnOrError = pcall(readOne, person, result, drive)
 					if not readOk and not loggedCarError then
 						loggedCarError = true
 						debugPrint(LOG_PREFIX .. "entity " .. tostring(person) .. " error: " .. tostring(drawnOrError))
@@ -211,7 +208,7 @@ function scan.cars(onlyVisible : boolean) : PgraceVehicleDestinationScan.Result
 
 	debugPrint(LOG_PREFIX .. "scan: " .. tostring(result.edges) .. " street edges in " .. tostring(result.radius)
 		.. " m, " .. tostring(result.moving) .. " moving, " .. tostring(result.drivers) .. " drivers, "
-		.. tostring(result.drawn) .. " drawn, " .. tostring(#result.entries) .. " counted, " .. tostring(result.ms) .. " ms")
+		.. tostring(result.drawn) .. " drawn, " .. tostring(result.ms) .. " ms")
 	debugPrint(LOG_PREFIX .. "probe footprint: " .. (circle == fallback and "FALLBACK" or "ok") -- PROBE (remove before release)
 		.. " eye distance " .. tostring(math.floor(distance + 0.5)) .. " m, old radius " -- PROBE (remove before release)
 		.. tostring(math.floor(fallback.radius + 0.5)) .. " m, circle off look-at by " -- PROBE (remove before release)

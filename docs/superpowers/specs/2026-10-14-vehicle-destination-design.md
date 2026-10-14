@@ -40,8 +40,11 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
 - **Layout as Trim the Fat** (user's choice after the first in-game look): F2's toolbar floats over the tab row's
   right end: a filter box with the eye and Refresh (⟳), and the expand toggle in its own box. The eye and the
   expanded state are remembered between openings (until restart).
-- **Eye:** on (default) counts only cars the game draws (`isVisible`); off also counts drivers on the streets in
-  the search circle that aren't drawn (useful zoomed far out). Toggling it rescans.
+- **Eye:** on (default) lists only cars the game draws (`isVisible`); off also lists drivers on the streets in the
+  search circle that aren't drawn (useful zoomed far out). Each count keeps every driver with a `drawn` flag, so the
+  eye only switches lists: it never counts again, and never moves the counted spot. (Recounting on each toggle, from
+  wherever an arrow had moved the camera, made the view creep.)
+- **Counted spot:** set on open and on Refresh only, from the camera's look-at point then.
 - **Summary line** above the table: "{count} cars in view" (eye off: "{count} cars nearby"; one key per plural form,
   as in Commuter Compass), followed by " · {count} destination unknown" when there are any.
 - **Table:** a `builtin.DataTable` with the columns Town, Cars, Home, Work, Shop and Distance. It starts sorted by Cars,
@@ -53,7 +56,7 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
     - **Pin and arrow** (as Commuter Compass): each Town cell starts with our own pin (`followEntity`; not the base
     `LocateButton`, which other mods replace) and an arrow toggle. One arrow at a time, from the **counted spot** (the
     camera's look-at point at the last count) to the town's centre (bounding-volume centre), styled as Cargo
-    Compass's actual flows, with a distance label at the top of its arc. Turning it on frames both ends, with the
+    Compass's actual flows, with a distance label at the top of its arc. Turning it on (or switching town) frames both ends; a refresh moves its start but not the camera, with the
     view moved toward the camera so the arrow sits above the window. The arrow stays across refreshes (starting from
     the new spot) while its town is listed, and goes when the window closes.
   - The map action needs a fuller game context than the mod button area gives: the arrow builds one as `game.tl`

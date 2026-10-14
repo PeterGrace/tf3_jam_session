@@ -2,7 +2,7 @@
 -- (react.enqueueJoin): isVisible reads the camera.
 global record PgraceVehicleDestinationScan
 	record Result
-		-- The counted cars: drawn ones only, or every driver found when onlyVisible is false.
+		-- Every driver found, each flagged with whether it's drawn on screen.
 		entries : {PgraceVehicleDestinationTally.Entry}
 		-- The camera's look-at point when counted: where the cars were counted.
 		center : Vec3f
@@ -21,5 +21,5 @@ global record PgraceVehicleDestinationScan
 	-- Throws if the engine can't be read at all (or MoveMode.DRIVE is missing). Each person is read in its own pcall:
 	-- a car whose destination can't be read becomes an unknown entry, and a person that can't be read at all (or
 	-- whose isVisible throws) is skipped.
-	cars : function(onlyVisible : boolean) : Result
+	cars : function() : Result
 end
