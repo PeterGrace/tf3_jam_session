@@ -1,9 +1,9 @@
 -- Engine reads: the private cars around the camera and where they're going, spread over frames. Call from the main
 -- thread (react.enqueueJoin): isVisible reads the camera.
-global record PgraceVehicleDestinationScan
+global record PgraceJamSessionScan
 	record Result
 		-- Every driver found, each flagged with whether it's drawn on screen.
-		entries : {PgraceVehicleDestinationTally.Entry}
+		entries : {PgraceJamSessionTally.Entry}
 		-- The camera's look-at point when counted: where the cars were counted.
 		center : Vec3f
 		-- Street edges in the search circle around the camera, and its radius in metres.

@@ -1,4 +1,7 @@
-# Vehicle Destination: where are the cars in view heading?
+# Jam Session (formerly Vehicle Destination): where are the cars in view heading?
+
+Renamed before the first upload: mod ID `pgrace_jam_session` (was `pgrace_vehicle_destination`); the window and tab
+title is the brand "Jam Session", not translated. File names here keep the old name.
 
 ## Problem
 
@@ -22,14 +25,14 @@ at a time.
 Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that opens a window"):
 
 - **Button:** a plugin on `::MainModButtonAreaExtension`, a `builtin.ToolButton` (car icon) with the tooltip
-  "Car destinations: where the cars on screen are heading".
+  "Jam Session: where the cars on screen are heading".
 - **Window:** `tool_react_util.registerToolWithWindow`, with a `builtin.Window` wrapper recipe. It's sized and
   docked like F2 through a mod stylesheet keyed on a window class, with `compact = true` and a single-tab
   `TabWidget` for the title. The button shows pressed while the window is open; clicking it again, ✕ and Esc
   close it.
 
 ```
-┌[Car destinations]──────────── [👁 ⟳] [⤢] ✕┐
+┌[Jam Session]───────────────── [👁 ⟳] [⤢] ✕┐
 │ 42 cars in view · Destination unknown: 7    │
 ├──────────────┬──────┬──────┬──────┬────────┤
 │ Town         │ Cars │ Home │ Work │ Shop   │
@@ -82,7 +85,7 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
   a table row: the `DataTable` sorts every row by the clicked column, so a row can't be pinned to the bottom. They're
   included in the total.
 - **Empty view:** instead of the table, "No cars in view. Move the camera to a road and count again."
-- **Error:** "Error (see log)", with the error logged under a `[vehicle_destination]` prefix.
+- **Error:** "Error (see log)", with the error logged under a `[jam_session]` prefix.
 
 ## §2 Data
 
@@ -102,7 +105,7 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
    - A missing target, a target that isn't a town building, or an entity that no longer exists gives
      `town = nil` (the Unknown row).
    - Each car is read in its own `pcall`, so one bad entity becomes Unknown without failing the scan.
-5. Log `[vehicle_destination] scan: E street edges in R m, N moving, M drivers, D drawn, C counted, T ms`.
+5. Log `[jam_session] scan: E street edges in R m (T tiles), N moving, M drivers, D drawn; W ms of work over F frames, A ms in all`.
 
 **Spread over frames** (the freeze fix): a zoomed-out scan was 250 ms to 1 s of work in one frame, almost all of it
 the engine's own lookups (finding street edges: 60 ms in one call; the people on each edge: 113 ms; destinations 23
@@ -131,7 +134,7 @@ react step (`world2Screen` throws "API is currently restricted", an uncatchable 
 ## §3 Files
 
 ```
-content/gui/pgrace_vehicle_destination/
+content/gui/pgrace_jam_session/
 ├── tally.tl                 # pure grouping (replaces the template's util.tl)
 ├── scan.tl                  # engine reads
 ├── window.script.tl         # button plugin, tool, window, table

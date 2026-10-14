@@ -6,8 +6,6 @@
         "{count} cars nearby|other": "{count} cars nearby"
     },
     "de": {
-        "Car destinations": "Autoziele",
-        "Car destinations: where the cars on screen are heading": "Autoziele: wohin die Autos auf dem Bildschirm fahren",
         "Cars": "Autos",
         "Destination unknown: {count}": "Ziel unbekannt: {count}",
         "Counted cars on this trip": "Gezählte Autos auf dieser Strecke",
@@ -39,11 +37,10 @@
         "{count} cars in view|one": "{count} Auto im Bild",
         "{count} cars nearby|one": "{count} Auto in der Nähe",
         "{count} cars in view|other": "{count} Autos im Bild",
-        "{count} cars nearby|other": "{count} Autos in der Nähe"
+        "{count} cars nearby|other": "{count} Autos in der Nähe",
+        "Jam Session: where the cars on screen are heading": "Jam Session: wohin die Autos auf dem Bildschirm fahren"
     },
     "es": {
-        "Car destinations": "Destinos de coches",
-        "Car destinations: where the cars on screen are heading": "Destinos de coches: adónde van los coches en pantalla",
         "Cars": "Coches",
         "Destination unknown: {count}": "Destino desconocido: {count}",
         "Counted cars on this trip": "Coches contados en este trayecto",
@@ -75,11 +72,10 @@
         "{count} cars in view|one": "{count} coche a la vista",
         "{count} cars nearby|one": "{count} coche cerca",
         "{count} cars in view|other": "{count} coches a la vista",
-        "{count} cars nearby|other": "{count} coches cerca"
+        "{count} cars nearby|other": "{count} coches cerca",
+        "Jam Session: where the cars on screen are heading": "Jam Session: adónde van los coches en pantalla"
     },
     "fr": {
-        "Car destinations": "Destinations des voitures",
-        "Car destinations: where the cars on screen are heading": "Destinations des voitures : où vont les voitures à l'écran",
         "Cars": "Voitures",
         "Destination unknown: {count}": "Destination inconnue : {count}",
         "Counted cars on this trip": "Voitures comptées sur ce trajet",
@@ -111,11 +107,10 @@
         "{count} cars in view|one": "{count} voiture en vue",
         "{count} cars nearby|one": "{count} voiture à proximité",
         "{count} cars in view|other": "{count} voitures en vue",
-        "{count} cars nearby|other": "{count} voitures à proximité"
+        "{count} cars nearby|other": "{count} voitures à proximité",
+        "Jam Session: where the cars on screen are heading": "Jam Session : où vont les voitures à l'écran"
     },
     "it": {
-        "Car destinations": "Destinazioni auto",
-        "Car destinations: where the cars on screen are heading": "Destinazioni auto: dove vanno le auto sullo schermo",
         "Cars": "Automobili",
         "Destination unknown: {count}": "Destinazione sconosciuta: {count}",
         "Counted cars on this trip": "Auto contate su questo tragitto",
@@ -147,11 +142,10 @@
         "{count} cars in view|one": "{count} auto in vista",
         "{count} cars nearby|one": "{count} auto nelle vicinanze",
         "{count} cars in view|other": "{count} auto in vista",
-        "{count} cars nearby|other": "{count} auto nelle vicinanze"
+        "{count} cars nearby|other": "{count} auto nelle vicinanze",
+        "Jam Session: where the cars on screen are heading": "Jam Session: dove vanno le auto sullo schermo"
     },
     "ja": {
-        "Car destinations": "自動車の目的地",
-        "Car destinations: where the cars on screen are heading": "自動車の目的地：画面上の車の行き先",
         "Cars": "自動車",
         "Destination unknown: {count}": "目的地不明：{count}",
         "Counted cars on this trip": "この経路で数えた車",
@@ -181,11 +175,10 @@
         "Where the trip started": "出発した場所",
         "Work": "仕事",
         "{count} cars in view|other": "画面内の車：{count}台",
-        "{count} cars nearby|other": "近くの車：{count}台"
+        "{count} cars nearby|other": "近くの車：{count}台",
+        "Jam Session: where the cars on screen are heading": "Jam Session：画面上の車の行き先"
     },
     "ko": {
-        "Car destinations": "자동차 목적지",
-        "Car destinations: where the cars on screen are heading": "자동차 목적지: 화면 속 자동차가 향하는 곳",
         "Cars": "자동차",
         "Destination unknown: {count}": "목적지 알 수 없음: {count}",
         "Counted cars on this trip": "이 경로에서 센 자동차",
@@ -215,11 +208,10 @@
         "Where the trip started": "출발한 곳",
         "Work": "직장",
         "{count} cars in view|other": "화면 속 자동차 {count}대",
-        "{count} cars nearby|other": "근처 자동차 {count}대"
+        "{count} cars nearby|other": "근처 자동차 {count}대",
+        "Jam Session: where the cars on screen are heading": "Jam Session: 화면 속 자동차가 향하는 곳"
     },
     "nl": {
-        "Car destinations": "Autobestemmingen",
-        "Car destinations: where the cars on screen are heading": "Autobestemmingen: waar de auto's op het scherm heen gaan",
         "Cars": "Auto's",
         "Destination unknown: {count}": "Bestemming onbekend: {count}",
         "Counted cars on this trip": "Getelde auto's op deze rit",
@@ -251,11 +243,10 @@
         "{count} cars in view|one": "{count} auto in beeld",
         "{count} cars nearby|one": "{count} auto in de buurt",
         "{count} cars in view|other": "{count} auto's in beeld",
-        "{count} cars nearby|other": "{count} auto's in de buurt"
+        "{count} cars nearby|other": "{count} auto's in de buurt",
+        "Jam Session: where the cars on screen are heading": "Jam Session: waar de auto's op het scherm heen gaan"
     },
     "pl": {
-        "Car destinations": "Cele samochodów",
-        "Car destinations: where the cars on screen are heading": "Cele samochodów: dokąd jadą samochody na ekranie",
         "Cars": "Samochody",
         "Destination unknown: {count}": "Cel nieznany: {count}",
         "Counted cars on this trip": "Policzone samochody na tej trasie",
@@ -289,11 +280,10 @@
         "{count} cars in view|few": "{count} samochody w widoku",
         "{count} cars nearby|few": "{count} samochody w pobliżu",
         "{count} cars in view|many": "{count} samochodów w widoku",
-        "{count} cars nearby|many": "{count} samochodów w pobliżu"
+        "{count} cars nearby|many": "{count} samochodów w pobliżu",
+        "Jam Session: where the cars on screen are heading": "Jam Session: dokąd jadą samochody na ekranie"
     },
     "pt_BR": {
-        "Car destinations": "Destinos dos carros",
-        "Car destinations: where the cars on screen are heading": "Destinos dos carros: para onde vão os carros na tela",
         "Cars": "Carros",
         "Destination unknown: {count}": "Destino desconhecido: {count}",
         "Counted cars on this trip": "Carros contados neste trajeto",
@@ -325,11 +315,10 @@
         "{count} cars in view|one": "{count} carro à vista",
         "{count} cars nearby|one": "{count} carro por perto",
         "{count} cars in view|other": "{count} carros à vista",
-        "{count} cars nearby|other": "{count} carros por perto"
+        "{count} cars nearby|other": "{count} carros por perto",
+        "Jam Session: where the cars on screen are heading": "Jam Session: para onde vão os carros na tela"
     },
     "ru": {
-        "Car destinations": "Куда едут машины",
-        "Car destinations: where the cars on screen are heading": "Куда едут машины: направления машин на экране",
         "Cars": "Автомобили",
         "Destination unknown: {count}": "Цель неизвестна: {count}",
         "Counted cars on this trip": "Посчитанные машины на этом маршруте",
@@ -363,11 +352,10 @@
         "{count} cars in view|few": "{count} машины в кадре",
         "{count} cars nearby|few": "{count} машины поблизости",
         "{count} cars in view|many": "{count} машин в кадре",
-        "{count} cars nearby|many": "{count} машин поблизости"
+        "{count} cars nearby|many": "{count} машин поблизости",
+        "Jam Session: where the cars on screen are heading": "Jam Session: куда едут машины на экране"
     },
     "zh_CN": {
-        "Car destinations": "汽车目的地",
-        "Car destinations: where the cars on screen are heading": "汽车目的地：屏幕上的汽车要去哪里",
         "Cars": "汽车",
         "Destination unknown: {count}": "目的地未知：{count}",
         "Counted cars on this trip": "此路线上统计的汽车",
@@ -397,11 +385,10 @@
         "Where the trip started": "行程从哪里开始",
         "Work": "工作",
         "{count} cars in view|other": "视野中有 {count} 辆汽车",
-        "{count} cars nearby|other": "附近有 {count} 辆汽车"
+        "{count} cars nearby|other": "附近有 {count} 辆汽车",
+        "Jam Session: where the cars on screen are heading": "Jam Session：屏幕上的汽车要去哪里"
     },
     "zh_TW": {
-        "Car destinations": "汽車目的地",
-        "Car destinations: where the cars on screen are heading": "汽車目的地：畫面上的汽車要去哪裡",
         "Cars": "汽車",
         "Destination unknown: {count}": "目的地不明：{count}",
         "Counted cars on this trip": "此路線上統計的汽車",
@@ -431,6 +418,7 @@
         "Where the trip started": "行程從哪裡開始",
         "Work": "工作",
         "{count} cars in view|other": "視野中有 {count} 輛汽車",
-        "{count} cars nearby|other": "附近有 {count} 輛汽車"
+        "{count} cars nearby|other": "附近有 {count} 輛汽車",
+        "Jam Session: where the cars on screen are heading": "Jam Session：畫面上的汽車要去哪裡"
     }
 }

@@ -5,67 +5,67 @@
             "role": "CREATOR"
         }
     ],
-    "name": "Vehicle Destination",
+    "name": "Jam Session",
     "summary": "See where the cars on screen are heading and where they came from, to find trips worth serving.",
     "description": "Adds a car button next to the map layers button. It counts the private cars on screen and lists one row per trip: the town they came from, the town they're heading to, how many cars, and how many are driving home, to work or to the shops, with the straight-line trip distance and the distance from where you counted. Sort by any column, open a town's window, or show an arrow on the map. An eye toggle also counts cars too far away to be drawn. Cosmetic: achievements stay enabled.",
     "localization": {
         "de": {
-            "name": "Vehicle Destination",
+            "name": "Jam Session",
             "summary": "Zeigt, wohin die Autos im Bild fahren und woher sie kommen, um lohnende Verbindungen zu finden.",
             "description": "Fügt neben der Kartenebenen-Schaltfläche eine Auto-Schaltfläche hinzu. Sie zählt die Privatautos auf dem Bildschirm und zeigt eine Zeile pro Strecke: die Stadt, aus der sie kommen, die Stadt, in die sie fahren, wie viele Autos und wie viele davon nach Hause, zur Arbeit oder zum Einkaufen fahren, mit der Luftlinie der Strecke und der Entfernung von der Stelle, an der du gezählt hast. Nach jeder Spalte sortierbar; öffne das Fenster einer Stadt oder zeige einen Pfeil auf der Karte. Ein Augen-Schalter zählt auch Autos, die zu weit weg sind, um gezeichnet zu werden. Kosmetisch: Errungenschaften bleiben aktiviert."
         },
         "es": {
-            "name": "Vehicle Destination",
+            "name": "Jam Session",
             "summary": "Muestra adónde van los coches en pantalla y de dónde vienen, para hallar trayectos que servir.",
             "description": "Añade un botón de coche junto al botón de capas del mapa. Cuenta los coches particulares en pantalla y muestra una fila por trayecto: la localidad de origen, la de destino, cuántos coches y cuántos van a casa, al trabajo o de compras, con la distancia en línea recta del trayecto y la distancia desde donde contaste. Ordena por cualquier columna, abre la ventana de una localidad o muestra una flecha en el mapa. Un interruptor de ojo cuenta también los coches demasiado lejos para dibujarse. Cosmético: los logros siguen activos."
         },
         "fr": {
-            "name": "Vehicle Destination",
+            "name": "Jam Session",
             "summary": "Montre où vont les voitures à l'écran et d'où elles viennent, pour trouver les trajets à desservir.",
             "description": "Ajoute un bouton voiture à côté du bouton des calques de la carte. Il compte les voitures particulières à l'écran et affiche une ligne par trajet : la ville de départ, la ville de destination, le nombre de voitures et combien rentrent au domicile, vont au travail ou font des achats, avec la distance à vol d'oiseau du trajet et la distance depuis l'endroit où vous avez compté. Triez par n'importe quelle colonne, ouvrez la fenêtre d'une ville ou affichez une flèche sur la carte. Un bouton œil compte aussi les voitures trop éloignées pour être affichées. Cosmétique : les succès restent activés."
         },
         "it": {
-            "name": "Vehicle Destination",
+            "name": "Jam Session",
             "summary": "Mostra dove vanno le auto sullo schermo e da dove vengono, per trovare i tragitti da servire.",
             "description": "Aggiunge un pulsante auto accanto al pulsante dei livelli della mappa. Conta le auto private sullo schermo e mostra una riga per tragitto: la cittadina di partenza, quella di destinazione, quante auto e quante tornano a casa, vanno al lavoro o a fare acquisti, con la distanza in linea d'aria del tragitto e la distanza dal punto in cui hai contato. Ordina per qualsiasi colonna, apri la finestra di una cittadina o mostra una freccia sulla mappa. Un interruttore a occhio conta anche le auto troppo lontane per essere disegnate. Cosmetica: gli obiettivi restano attivi."
         },
         "ja": {
-            "name": "Vehicle Destination",
+            "name": "Jam Session",
             "summary": "画面上の車がどこへ向かい、どこから来たかを表示し、輸送すべき移動を見つけます。",
             "description": "マップレイヤーボタンの隣に車ボタンを追加します。画面上の自家用車を数え、移動ごとに1行で表示します：出発地の町、目的地の町、車の台数、そのうち帰宅・通勤・買物の台数、移動の直線距離、数えた場所からの距離。任意の列で並べ替え、町のウィンドウを開いたり、マップに矢印を表示したりできます。目のトグルで、描画されないほど遠い車も数えます。見た目のみのMOD：実績は有効のままです。"
         },
         "ko": {
-            "name": "Vehicle Destination",
+            "name": "Jam Session",
             "summary": "화면 속 자동차가 어디로 가고 어디서 왔는지 보여 주어, 운행할 만한 경로를 찾게 해 줍니다.",
             "description": "지도 레이어 버튼 옆에 자동차 버튼을 추가합니다. 화면 속 자가용을 세고 경로마다 한 줄씩 보여 줍니다: 출발한 마을, 목적지 마을, 자동차 수, 그중 집·직장·쇼핑으로 가는 수, 경로의 직선 거리와 센 곳에서의 거리. 아무 열로나 정렬하고, 마을 창을 열거나 지도에 화살표를 표시할 수 있습니다. 눈 토글은 너무 멀어 그려지지 않는 자동차도 셉니다. 외형 전용: 업적은 계속 활성화됩니다."
         },
         "nl": {
-            "name": "Vehicle Destination",
+            "name": "Jam Session",
             "summary": "Toont waar de auto's in beeld heen gaan en vandaan komen, om ritten te vinden die het waard zijn.",
             "description": "Voegt naast de knop voor kaartlagen een autoknop toe. Die telt de privéauto's op het scherm en toont één rij per rit: de stad van vertrek, de bestemming, hoeveel auto's en hoeveel daarvan naar huis, naar het werk of gaan winkelen, met de afstand hemelsbreed van de rit en de afstand vanaf waar je telde. Sorteer op elke kolom, open het venster van een stad of toon een pijl op de kaart. Een oog-schakelaar telt ook auto's die te ver weg zijn om getekend te worden. Cosmetisch: prestaties blijven ingeschakeld."
         },
         "pl": {
-            "name": "Vehicle Destination",
+            "name": "Jam Session",
             "summary": "Pokazuje, dokąd jadą samochody na ekranie i skąd przyjechały, by znaleźć trasy warte obsłużenia.",
             "description": "Dodaje przycisk samochodu obok przycisku warstw mapy. Liczy prywatne samochody na ekranie i pokazuje jeden wiersz na trasę: miasto, z którego jadą, miasto, do którego jadą, liczbę samochodów i ile z nich jedzie do domu, do pracy lub na zakupy, z odległością trasy w linii prostej i odległością od miejsca liczenia. Sortuj według dowolnej kolumny, otwórz okno miasta lub pokaż strzałkę na mapie. Przełącznik oka liczy też samochody zbyt daleko, by je rysować. Kosmetyczny: osiągnięcia pozostają włączone."
         },
         "pt_BR": {
-            "name": "Vehicle Destination",
+            "name": "Jam Session",
             "summary": "Mostra para onde vão os carros na tela e de onde vieram, para achar trajetos a atender.",
             "description": "Adiciona um botão de carro ao lado do botão de camadas do mapa. Ele conta os carros particulares na tela e mostra uma linha por trajeto: o município de origem, o de destino, quantos carros e quantos vão para casa, para o trabalho ou às compras, com a distância em linha reta do trajeto e a distância de onde você contou. Ordene por qualquer coluna, abra a janela de um município ou mostre uma seta no mapa. Um botão de olho conta também os carros longe demais para serem desenhados. Cosmético: as conquistas continuam ativas."
         },
         "ru": {
-            "name": "Vehicle Destination",
+            "name": "Jam Session",
             "summary": "Показывает, куда и откуда едут машины на экране, чтобы найти маршруты, которые стоит обслужить.",
             "description": "Добавляет кнопку с машиной рядом с кнопкой слоёв карты. Она считает личные машины на экране и показывает по строке на маршрут: город отправления, город назначения, число машин и сколько из них едут домой, на работу или за покупками, с расстоянием маршрута по прямой и расстоянием от места подсчёта. Сортируйте по любому столбцу, открывайте окно города или показывайте стрелку на карте. Переключатель с глазом считает и машины, слишком далёкие для отображения. Косметический мод: достижения остаются доступны."
         },
         "zh_CN": {
-            "name": "Vehicle Destination",
+            "name": "Jam Session",
             "summary": "显示屏幕上的汽车要去哪里、从哪里来，帮你找到值得开线的行程。",
             "description": "在地图图层按钮旁添加一个汽车按钮。它统计屏幕上的私家车，每条行程一行：出发城镇、目的地城镇、汽车数量，以及其中回家、上班、购物的数量，并附上行程的直线距离和从统计地点算起的距离。可按任意列排序、打开城镇窗口或在地图上显示箭头。眼睛开关也会统计因太远而未绘制的汽车。外观模组：成就保持可用。"
         },
         "zh_TW": {
-            "name": "Vehicle Destination",
+            "name": "Jam Session",
             "summary": "顯示畫面上的汽車要去哪裡、從哪裡來，幫你找到值得開線的行程。",
             "description": "在地圖圖層按鈕旁新增一個汽車按鈕。它統計畫面上的私家車，每條行程一列：出發城鎮、目的地城鎮、汽車數量，以及其中回家、上班、購物的數量，並附上行程的直線距離和從統計地點算起的距離。可依任意欄排序、開啟城鎮視窗或在地圖上顯示箭頭。眼睛開關也會統計因太遠而未繪製的汽車。外觀模組：成就保持可用。"
         }

@@ -1,9 +1,9 @@
-local tally : PgraceVehicleDestinationTally = {}
+local tally : PgraceJamSessionTally = {}
 
-local type Purpose = PgraceVehicleDestinationTally.Purpose
-local type Entry = PgraceVehicleDestinationTally.Entry
-local type Row = PgraceVehicleDestinationTally.Row
-local type Result = PgraceVehicleDestinationTally.Result
+local type Purpose = PgraceJamSessionTally.Purpose
+local type Entry = PgraceJamSessionTally.Entry
+local type Row = PgraceJamSessionTally.Row
+local type Result = PgraceJamSessionTally.Result
 
 function tally.purposeOf(target : integer, destinations : {integer}) : Purpose
 	if target == nil or target < 0 or destinations == nil then

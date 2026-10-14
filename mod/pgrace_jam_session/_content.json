@@ -1,0 +1,12 @@
+{
+    "archives": null,
+    "files": [
+        "gui/pgrace_jam_session/button.res.lua",
+        "gui/pgrace_jam_session/scan.d.tl",
+        "gui/pgrace_jam_session/scan.tl",
+        "gui/pgrace_jam_session/tally.d.tl",
+        "gui/pgrace_jam_session/tally.tl",
+        "gui/pgrace_jam_session/window.css.lua",
+        "gui/pgrace_jam_session/window.script.tl"
+    ]
+}

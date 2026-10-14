@@ -1,10 +1,10 @@
-local tally = ug_require "pgrace_vehicle_destination::/gui/pgrace_vehicle_destination/tally.tl" as PgraceVehicleDestinationTally
+local tally = ug_require "pgrace_jam_session::/gui/pgrace_jam_session/tally.tl" as PgraceJamSessionTally
 
-local scan : PgraceVehicleDestinationScan = {}
+local scan : PgraceJamSessionScan = {}
 
-local type Entry = PgraceVehicleDestinationTally.Entry
+local type Entry = PgraceJamSessionTally.Entry
 
-local LOG_PREFIX = "[vehicle_destination] "
+local LOG_PREFIX = "[jam_session] "
 
 -- Logged once per session, so a broken car or edge doesn't flood the log on every refresh.
 local loggedCarError = false
@@ -121,7 +121,7 @@ end
 local TILE_SIZE = 1000.0
 
 -- A person on the street: an entry if driving, flagged with whether it's drawn on screen. Returns true (for pcall).
-local function readOne(person : Engine.Entity, result : PgraceVehicleDestinationScan.Result, drive : MoveMode,
+local function readOne(person : Engine.Entity, result : PgraceJamSessionScan.Result, drive : MoveMode,
 		names : {Engine.Entity : string}) : boolean
 	if not api.engine.entityExists(person) then
 		return true
@@ -167,7 +167,7 @@ local record JobState
 	-- People already read (a car can sit on two edges' lists).
 	seen : {Engine.Entity : boolean}
 	names : {Engine.Entity : string}
-	result : PgraceVehicleDestinationScan.Result
+	result : PgraceJamSessionScan.Result
 end
 
 -- Tiles covering the search circle: a grid of TILE_SIZE cells over its bounding square, each looked up as the circle
@@ -191,7 +191,7 @@ local function tilesFor(circle : Circle) : {{number}}
 end
 
 -- Reads the camera and works out the search area; the street lookups and the cars are left to step. Main thread only.
-function scan.start() : PgraceVehicleDestinationScan.Job
+function scan.start() : PgraceJamSessionScan.Job
 	local clock = api.type.Clock.new()
 	local drive = api.type["enum"].MoveMode.DRIVE
 	if drive == nil then
@@ -227,7 +227,7 @@ function scan.start() : PgraceVehicleDestinationScan.Job
 		},
 	}
 	job.workUs = clock:getTime()
-	return job as any as PgraceVehicleDestinationScan.Job
+	return job as any as PgraceJamSessionScan.Job
 end
 
 local function lookUpTile(job : JobState, tile : {number})
@@ -273,7 +273,7 @@ end
 
 -- Does work until `budgetUs` microseconds have passed (at least one unit: a tile, or an edge and its people).
 -- Returns true when the scan is done; then job's result is complete. Main thread only (isVisible).
-function scan.step(publicJob : PgraceVehicleDestinationScan.Job, budgetUs : integer) : boolean
+function scan.step(publicJob : PgraceJamSessionScan.Job, budgetUs : integer) : boolean
 	local job = publicJob as any as JobState
 	local stepStart = job.clock:getTime()
 	job.steps = job.steps + 1
@@ -306,7 +306,7 @@ end
 
 -- Share of the work done, 0 to 1. The tiles come first and stand for a fifth of it (their edge count isn't known
 -- until they're looked up).
-function scan.progress(publicJob : PgraceVehicleDestinationScan.Job) : number
+function scan.progress(publicJob : PgraceJamSessionScan.Job) : number
 	local job = publicJob as any as JobState
 	local tiles = #job.tiles > 0 and job.tilesDone / #job.tiles or 1
 	if job.tilesDone < #job.tiles then
@@ -315,7 +315,7 @@ function scan.progress(publicJob : PgraceVehicleDestinationScan.Job) : number
 	return 0.2 + 0.8 * (#job.edges > 0 and job.edgesDone / #job.edges or 1)
 end
 
-function scan.result(publicJob : PgraceVehicleDestinationScan.Job) : PgraceVehicleDestinationScan.Result
+function scan.result(publicJob : PgraceJamSessionScan.Job) : PgraceJamSessionScan.Result
 	return (publicJob as any as JobState).result
 end
 

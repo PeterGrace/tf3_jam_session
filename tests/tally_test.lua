@@ -1,5 +1,5 @@
 local t = ...
-local tally = t.requireTl("gui/pgrace_vehicle_destination/tally.tl")
+local tally = t.requireTl("gui/pgrace_jam_session/tally.tl")
 
 t.test("purposeOf: matches residence, shopping, work", function()
 	local destinations = { 10, 20, 30 }

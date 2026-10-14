@@ -1,5 +1,5 @@
 -- Pure helpers (no api.* calls), so tests/tally_test.lua can run them in plain Lua.
-global record PgraceVehicleDestinationTally
+global record PgraceJamSessionTally
 	-- Why the car is going to its target: SimPerson.destinations holds {residence, shopping, work}.
 	enum Purpose
 		"home"

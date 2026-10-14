@@ -7,7 +7,7 @@ function data()
 	local result = {}
 	local a = ssu.makeAdder(result)
 
-	local window = "Window!pgrace-vehicle-destination"
+	local window = "Window!pgrace-jam-session"
 	a(window, {
 		gravity = { 0.5, 1.0 },
 		anchorPoint = { 0.5, 1.0 },
@@ -50,7 +50,7 @@ function data()
 	end
 
 	-- The content (F2: R::StatisticsContainer).
-	local root = "R::PgraceVehicleDestinationContent"
+	local root = "R::PgraceJamSessionContent"
 
 	-- Let the table fill the window.
 	a(root .. " Table", {
@@ -108,14 +108,14 @@ function data()
 
 	-- The Town cell's pin, arrow toggle and name sit on one line, as the base table places its LocateButton
 	-- (line_react_util.css.lua).
-	a("Table::TableLayout R::PgraceVehicleDestinationTownCell Button", {
+	a("Table::TableLayout R::PgraceJamSessionTownCell Button", {
 		gravity = { 0, -1 },
 	})
 
 	-- The arrow's distance label (Commuter Compass arrow_label.css.lua). Its floating layout fills the screen, so the
 	-- label can go anywhere on it; without this it shrinks to the label and sits at the left edge.
 	local colorDefault = api.gui.genericRep.get(api.gui.genericRep.find("::/gui/main/default_colors.gres")).data
-	local layer = "R::PgraceVehicleDestinationArrowLabelLayer"
+	local layer = "R::PgraceJamSessionArrowLabelLayer"
 	a(layer .. " FloatingLayout", {
 		gravity = { -1.0, -1.0 },
 	})
@@ -127,7 +127,7 @@ function data()
 		color = colorDefault.AccentLight,
 		gravity = { 0.5, 0 },
 	})
-	a(layer .. " R::PgraceVehicleDestinationArrowLabel TextView", {
+	a(layer .. " R::PgraceJamSessionArrowLabel TextView", {
 		color = colorDefault.NeutralDarkest,
 	})
 

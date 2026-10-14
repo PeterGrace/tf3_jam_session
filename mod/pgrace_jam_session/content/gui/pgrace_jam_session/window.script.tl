@@ -10,20 +10,22 @@ local color_util = ug_require "::/gui/main/color_util.tl" as ColorUtil
 local callout_react_util = ug_require "::/gui/main/callout_react_util.tl" as CalloutReactUtil
 local styleutil = ug_require "::/gui/main/styleutil.tl" as StyleUtil
 local notification_util = ug_require "::/game_mechanics/notifications/notification_util.tl" as NotificationUtil
-local tally = ug_require "pgrace_vehicle_destination::/gui/pgrace_vehicle_destination/tally.tl" as PgraceVehicleDestinationTally
-local scan = ug_require "pgrace_vehicle_destination::/gui/pgrace_vehicle_destination/scan.tl" as PgraceVehicleDestinationScan
+local tally = ug_require "pgrace_jam_session::/gui/pgrace_jam_session/tally.tl" as PgraceJamSessionTally
+local scan = ug_require "pgrace_jam_session::/gui/pgrace_jam_session/scan.tl" as PgraceJamSessionScan
 
 local layerColors = api.gui.genericRep.get(api.gui.genericRep.find("::/gui/layers/layer_colors.gres")).data as LayerColors
 
-local LOG_PREFIX = "[vehicle_destination] "
-local WINDOW_ID = "pgrace_vehicle_destination_window"
+local LOG_PREFIX = "[jam_session] "
+-- The mod's name, a brand: not translated (as Commuter Compass).
+local MOD_NAME = "Jam Session"
+local WINDOW_ID = "pgrace_jam_session_window"
 local BUTTON_ICON = "::/gui/entity_window/icons/vehicle_car.tga"
 local REFRESH_ICON = "::/gui/builtin/window/icons/refresh.tga"
 -- F2's "Show Only Visible" toggle (statistics_react_util.createShowOnlyVisibleButton).
 local EYE_ICON = "::/gui/statistics/icons/symbol_eye_18.tga"
 local LOCATE_ICON = "::/gui/line_vehicle_mgmt/icons/symbol_locate.tga"
 local ARROW_ICON = "::/gui/entity_window/icons/symbol_arrow_up.tga"
-local FLOW_ACTION_KEY = "pgrace_vehicle_destination_flow"
+local FLOW_ACTION_KEY = "pgrace_jam_session_flow"
 -- Framing the arrow, as Commuter Compass: camera distance as a multiple of the arrow's length, clamped (focusPosition
 -- caps it at the game's maximum zoom-out, about 4,055 m).
 local CAMERA_DISTANCE_FACTOR = 1.6
@@ -39,8 +41,8 @@ local ARROW_ARC_HEIGHT = 0.06
 local RIGHT_ALIGNED = "right-aligned"
 
 local type ToolParam = ToolReactUtil.IToolParam
-local type Row = PgraceVehicleDestinationTally.Row
-local type Result = PgraceVehicleDestinationTally.Result
+local type Row = PgraceJamSessionTally.Row
+local type Result = PgraceJamSessionTally.Result
 
 -- One list for the table: a count's cars, all or only those drawn (the eye). Both lists of a count share its
 -- spot, generation and distances.
@@ -136,9 +138,9 @@ local record Distances
 	tripText : {integer : string}
 end
 
-local function makeSnapshot(entries : {PgraceVehicleDestinationTally.Entry}, onlyVisible : boolean, from : Vec3f,
+local function makeSnapshot(entries : {PgraceJamSessionTally.Entry}, onlyVisible : boolean, from : Vec3f,
 		generation : integer, d : Distances) : Snapshot
-	local kept : {PgraceVehicleDestinationTally.Entry} = {}
+	local kept : {PgraceJamSessionTally.Entry} = {}
 	for __, entry in ipairs(entries) do
 		if entry.drawn or not onlyVisible then
 			kept[#kept + 1] = entry
@@ -164,7 +166,7 @@ end
 
 -- The tables for a finished scan. Never throws. Main thread (see Destinations). `keepFrom`, if given, is kept as the
 -- counted spot (the arrow's start) instead of the camera's look-at point when the scan started.
-local function buildCount(found : PgraceVehicleDestinationScan.Result, keepFrom : Vec3f) : Count
+local function buildCount(found : PgraceJamSessionScan.Result, keepFrom : Vec3f) : Count
 	nextGeneration = nextGeneration + 1
 	local generation = nextGeneration
 	local ok, countOrError = pcall(function() : Count
@@ -212,7 +214,7 @@ local SCAN_BUDGET_US = 6000
 
 -- A count in progress: the scan, and the arrow start to keep (see Destinations).
 local record Counting
-	job : PgraceVehicleDestinationScan.Job
+	job : PgraceJamSessionScan.Job
 	keepFrom : Vec3f
 end
 
@@ -276,7 +278,7 @@ local function makeLocateButton(entity : Engine.Entity) : TreeNodeId
 end
 
 -- Pin, arrow toggle and the name (opens the town's window), as Commuter Compass's name cell.
-local TownCell = react.RegisterRecipe("PgraceVehicleDestinationTownCell", function(params : Builtin.TableCellParam) : TreeNodeId
+local TownCell = react.RegisterRecipe("PgraceJamSessionTownCell", function(params : Builtin.TableCellParam) : TreeNodeId
 	local snapshot = params.userParam as Snapshot
 	local row = snapshot.rows[params.rowKey]
 	-- Cells keep their first userParam, so the toggle polls the shared selection to follow other rows' clicks.
@@ -325,7 +327,7 @@ local TownCell = react.RegisterRecipe("PgraceVehicleDestinationTownCell", functi
 end)
 
 -- The origin town's name (opens its window), or "Unknown".
-local FromCell = react.RegisterRecipe("PgraceVehicleDestinationFromCell", function(params : Builtin.TableCellParam) : TreeNodeId
+local FromCell = react.RegisterRecipe("PgraceJamSessionFromCell", function(params : Builtin.TableCellParam) : TreeNodeId
 	local row = (params.userParam as Snapshot).rows[params.rowKey]
 	if row == nil or row.from == nil then
 		return textRow(_("Unknown"), "font-scale-body")
@@ -421,7 +423,7 @@ local record ArrowLabelParams is IRecipeParamWithMeta
 	text : string
 end
 
-local ArrowLabel = react.RegisterRecipe("PgraceVehicleDestinationArrowLabel", function(params : ArrowLabelParams) : TreeNodeId
+local ArrowLabel = react.RegisterRecipe("PgraceJamSessionArrowLabel", function(params : ArrowLabelParams) : TreeNodeId
 	return builtin.BoxLayout{
 		children = { builtin.TextView{ meta = { class = "font-scale-body" }, text = params.text } },
 	}
@@ -435,7 +437,7 @@ end
 
 -- The arrow's distance at the top of its arc: a full-screen layer of the arrow's own map action, so it comes and goes
 -- with the arrow. window.css.lua makes the floating layout fill the screen.
-local ArrowLabelLayer = react.RegisterRecipe("PgraceVehicleDestinationArrowLabelLayer", function(params : ArrowLabelLayerParams) : TreeNodeId
+local ArrowLabelLayer = react.RegisterRecipe("PgraceJamSessionArrowLabelLayer", function(params : ArrowLabelLayerParams) : TreeNodeId
 	react.setMouseTransparent(true)
 	react.setDisableFocusable(true)
 	local a, b = params.from, params.to
@@ -460,7 +462,7 @@ local ArrowLabelLayer = react.RegisterRecipe("PgraceVehicleDestinationArrowLabel
 			if old == nil or old.x ~= h or old.y ~= v then
 				positionState:set(api.type.Vec2f.new(h, v))
 			end
-		end, "PgraceVehicleDestinationArrowLabelLayer")
+		end, "PgraceJamSessionArrowLabelLayer")
 	end)
 	local position = positionState:old()
 	if position == nil or position.x < 0 or position.x > 1 or position.y < 0 or position.y > 1 then
@@ -606,17 +608,17 @@ local function home(row : Row) : integer return row.home end
 local function work(row : Row) : integer return row.work end
 local function shop(row : Row) : integer return row.shop end
 
-local CarsCell = makeNumberCell("PgraceVehicleDestinationCarsCell", cars)
-local HomeCell = makeNumberCell("PgraceVehicleDestinationHomeCell", home)
-local WorkCell = makeNumberCell("PgraceVehicleDestinationWorkCell", work)
-local ShopCell = makeNumberCell("PgraceVehicleDestinationShopCell", shop)
+local CarsCell = makeNumberCell("PgraceJamSessionCarsCell", cars)
+local HomeCell = makeNumberCell("PgraceJamSessionHomeCell", home)
+local WorkCell = makeNumberCell("PgraceJamSessionWorkCell", work)
+local ShopCell = makeNumberCell("PgraceJamSessionShopCell", shop)
 
-local TripCell = react.RegisterRecipe("PgraceVehicleDestinationTripCell", function(params : Builtin.TableCellParam) : TreeNodeId
+local TripCell = react.RegisterRecipe("PgraceJamSessionTripCell", function(params : Builtin.TableCellParam) : TreeNodeId
 	react.setStyleClasses(RIGHT_ALIGNED)
 	return textRow((params.userParam as Snapshot).tripText[params.rowKey] or "–", "font-scale-body")
 end)
 
-local HereCell = react.RegisterRecipe("PgraceVehicleDestinationHereCell", function(params : Builtin.TableCellParam) : TreeNodeId
+local HereCell = react.RegisterRecipe("PgraceJamSessionHereCell", function(params : Builtin.TableCellParam) : TreeNodeId
 	react.setStyleClasses(RIGHT_ALIGNED)
 	local snapshot = params.userParam as Snapshot
 	local row = snapshot.rows[params.rowKey]
@@ -684,7 +686,7 @@ end
 
 -- Binds a map action that draws one arrow and makes it the renderer's active owner override. Unmounting (arrow off,
 -- window closed) clears the override.
-local FlowAction = react.RegisterRecipe("PgraceVehicleDestinationFlowAction", function(params : FlowParams) : TreeNodeId
+local FlowAction = react.RegisterRecipe("PgraceJamSessionFlowAction", function(params : FlowParams) : TreeNodeId
 	local gameCtx = mapGameContext(params.gameCtx)
 	-- The HUD icons' notification lookup reads this (see refreshNotifications).
 	react.onStep(refreshNotifications)
@@ -732,7 +734,7 @@ local FlowAction = react.RegisterRecipe("PgraceVehicleDestinationFlowAction", fu
 				if not ok then
 					debugPrint(LOG_PREFIX .. "camera move failed: " .. tostring(err))
 				end
-			end, "PgraceVehicleDestinationFrameCamera")
+			end, "PgraceJamSessionFrameCamera")
 			settleRef:set(SETTLE_STEPS)
 		end
 		local steps = settleRef:get()
@@ -747,7 +749,7 @@ local FlowAction = react.RegisterRecipe("PgraceVehicleDestinationFlowAction", fu
 					if ok and view ~= nil then
 						params.onViewSettled(view as View)
 					end
-				end, "PgraceVehicleDestinationViewSettled")
+				end, "PgraceJamSessionViewSettled")
 			end
 		end
 	end)
@@ -806,7 +808,7 @@ local record ContentParams
 	setExpanded : function(boolean)
 end
 
-local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", function(params : ContentParams) : TreeNodeId
+local Destinations = react.RegisterRecipe("PgraceJamSessionContent", function(params : ContentParams) : TreeNodeId
 	local countState : ReactStateT<Count> = react.useState(nil)
 	-- The view at the last count, or where the arrow's framing came to rest since.
 	local viewRef : ReactRefT<View> = react.useRef(nil)
@@ -862,7 +864,7 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 				viewRef:set(view)
 				local ok, jobOrError = pcall(scan.start)
 				if ok then
-					countingRef:set({ job = jobOrError as PgraceVehicleDestinationScan.Job, keepFrom = keepFrom })
+					countingRef:set({ job = jobOrError as PgraceJamSessionScan.Job, keepFrom = keepFrom })
 					progressState:set(0)
 				else
 					debugPrint(LOG_PREFIX .. "scan error: " .. tostring(jobOrError))
@@ -870,7 +872,7 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 					progressState:set(nil)
 					countState:set(failedCount())
 				end
-			end, "PgraceVehicleDestinationScan")
+			end, "PgraceJamSessionScan")
 		elseif countingRef:get() ~= nil then
 			joinQueuedRef:set(true)
 			safeJoin(function()
@@ -902,7 +904,7 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 						progressState:set(percent)
 					end
 				end
-			end, "PgraceVehicleDestinationScan")
+			end, "PgraceJamSessionScan")
 		end
 	end)
 
@@ -1021,7 +1023,7 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 						builtin.TabWidgetChild{
 							localKey = "destinations",
 							value = "destinations",
-							indicator = builtin.TextView{ meta = { class = "font-scale-tab-widget-indicator" }, text = _("Car destinations") },
+							indicator = builtin.TextView{ meta = { class = "font-scale-tab-widget-indicator" }, text = MOD_NAME },
 							item = builtin.Component{
 								layout = builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = body },
 							},
@@ -1049,13 +1051,13 @@ local function makeToolParam() : ToolParam
 	return { gameCtx = gameCtx }
 end
 
-local DestinationsWindow = react.RegisterWrapperRecipe("PgraceVehicleDestinationWindow", builtin.Window, function(params : ToolReactUtil.IToolWindowParam<ToolParam>) : TreeNodeId
+local DestinationsWindow = react.RegisterWrapperRecipe("PgraceJamSessionWindow", builtin.Window, function(params : ToolReactUtil.IToolWindowParam<ToolParam>) : TreeNodeId
 	local expandedState = react.useState(remembered.expanded) as ReactStateT<boolean>
 	-- Size, position and animations come from window.css.lua, by this class: F2's rules for its window.
 	return builtin.Window{
-		meta = { class = "pgrace-vehicle-destination" },
+		meta = { class = "pgrace-jam-session" },
 		id = WINDOW_ID,
-		title = _("Car destinations"),
+		title = MOD_NAME,
 		closable = true,
 		-- As F2: no title bar (the close button overlaps the content's top-right corner), docked, not movable.
 		compact = true,
@@ -1073,13 +1075,13 @@ local DestinationsWindow = react.RegisterWrapperRecipe("PgraceVehicleDestination
 	}
 end)
 
-local DestinationsTool = tool_react_util.registerToolWithWindow("PgraceVehicleDestination", WINDOW_ID, DestinationsWindow)
+local DestinationsTool = tool_react_util.registerToolWithWindow("PgraceJamSession", WINDOW_ID, DestinationsWindow)
 
-local DestinationsButton = react.RegisterPluginRecipe(main_mod_button_area.MainModButtonAreaExtension, "PgraceVehicleDestinationButton", function() : TreeNodeId
+local DestinationsButton = react.RegisterPluginRecipe(main_mod_button_area.MainModButtonAreaExtension, "PgraceJamSessionButton", function() : TreeNodeId
 	return builtin.BoxLayout{
 		children = {
 			builtin.ToolButton{
-				meta = { tooltip = _("Car destinations: where the cars on screen are heading") },
+				meta = { tooltip = _("Jam Session: where the cars on screen are heading") },
 				toolDefinition = DestinationsTool,
 				toolStack = game_react_globals.getDefaultToolStack(),
 				content = builtin.ImageView{
