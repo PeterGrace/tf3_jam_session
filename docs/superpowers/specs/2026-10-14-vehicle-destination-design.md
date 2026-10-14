@@ -28,17 +28,22 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
   close it.
 
 ```
-┌ Car destinations ──────────────────────── ✕ ┐
-│ 42 cars in view                        [↻] │
+┌[Car destinations]──────────── [👁 ⟳] [⤢] ✕┐
+│ 42 cars in view · 7 destination unknown     │
 ├──────────────┬──────┬──────┬──────┬────────┤
 │ Town         │ Cars │ Home │ Work │ Shop   │
 ├──────────────┼──────┼──────┼──────┼────────┤
-│ Springfield  │ 23   │ 4    │ 15   │ 4      │
-│ Shelbyville  │ 12   │ 9    │ 2    │ 1      │
+│ Springfield  │   23 │    4 │   15 │      4 │
+│ Shelbyville  │   12 │    9 │    2 │      1 │
 └──────────────┴──────┴──────┴──────┴────────┘
-  Destination unknown: 7
 ```
-- **Header:** "{count} cars in view" (one key per plural form, as in Commuter Compass) and a Refresh button (⟳).
+- **Layout as Trim the Fat** (user's choice after the first in-game look): F2's toolbar floats over the tab row's
+  right end: a filter box with the eye and Refresh (⟳), and the expand toggle in its own box. The eye and the
+  expanded state are remembered between openings (until restart).
+- **Eye:** on (default) counts only cars the game draws (`isVisible`); off also counts drivers on the streets in
+  the search circle that aren't drawn (useful zoomed far out). Toggling it rescans.
+- **Summary line** above the table: "{count} cars in view" (eye off: "{count} cars nearby"; one key per plural form,
+  as in Commuter Compass), followed by " · {count} destination unknown" when there are any.
 - **Table:** a `builtin.DataTable` with the columns Town, Cars, Home, Work and Shop. It starts sorted by Cars,
   descending, and every column sorts on a header click.
   - The Town column has a weight and a tooltip with the full name. Its cells are
@@ -47,9 +52,9 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
     squeeze the weighted Town column (AGENTS.md "Tables").
   - **Each Refresh rebuilds the table** (a new `localKey`), so it starts at the top. This is the approach Trim the
     Fat settled on.
-- **Unknown destinations:** cars whose destination town can't be resolved are counted in a line below the table
-  ("Destination unknown: 7"), not as a table row: the `DataTable` sorts every row by the clicked column, so a row
-  can't be pinned to the bottom. They're included in the header total.
+- **Unknown destinations:** cars whose destination town can't be resolved are counted in the summary line, not as
+  a table row: the `DataTable` sorts every row by the clicked column, so a row can't be pinned to the bottom. They're
+  included in the total.
 - **Empty view:** instead of the table, "No cars in view. Move the camera to a road and press Refresh."
 - **Error:** "Error (see log)", with the error logged under a `[vehicle_destination]` prefix.
 
@@ -57,10 +62,12 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
 
 ### Finding visible cars (`scan.tl`, engine reads)
 
-1. `api.engine.forEachEntityWithComponent(fn, SIM_ENTITY_MOVING)` collects the moving sim entities.
-2. Keep an entity if it has `SIM_PERSON` and `lastMoveMode == MoveMode.DRIVE`.
-3. Keep it if `api.gui.byEntity.isVisible(e)` is true. Fall back to `isVehicleVisible` if the probe shows that
-   `isVisible` doesn't work on people.
+1. `SIM_ENTITY_MOVING` **can't be looped over** ("Cannot loop over this component type", in-game). Instead,
+   `octree.findEntitiesInCircle(lookAt, r, BASE_EDGE_STREET)` collects the street edges around the camera's look-at
+   point (`r` = 2.5 × the eye's distance, clamped to 300–8000 m), and
+   `simPersonSystem.getSimPersonsMovingForTransportNetwork(edge)` gives the people moving on each (deduplicated).
+2. Keep a person if `SIM_PERSON.lastMoveMode == MoveMode.DRIVE`.
+3. With the eye on, keep it if `api.gui.byEntity.isVisible(person)` is true.
 4. For each car, produce an entry `{ town, townName, purpose }`:
    - `target = SimPerson.targetOrAtEntity`, then `TOWN_BUILDING.town` gives the town, and
      `api.engine.util.getEntityName(town)` its name.
@@ -69,7 +76,7 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
    - A missing target, a target that isn't a town building, or an entity that no longer exists gives
      `town = nil` (the Unknown row).
    - Each car is read in its own `pcall`, so one bad entity becomes Unknown without failing the scan.
-5. Log `[vehicle_destination] scan: N moving, M cars, K visible, T ms` on each scan.
+5. Log `[vehicle_destination] scan: E street edges in R m, N moving, M drivers, D drawn, C counted, T ms`.
 
 The scan runs on the main thread: on open and on Refresh, the window sets a "scan due" ref, and `react.onStep`
 hands the scan to `react.enqueueJoin`. `isVisible` is a camera read, and camera reads can be restricted during the
@@ -114,6 +121,19 @@ road and presses Refresh a few times, at a few zoom levels:
 If the purpose match is rare, fall back to the target building's land use: the Home, Work and Shop columns become
 Residential, Industrial and Commercial.
 
+### Findings (round 1, 2026-10-14, user's 697k-population save)
+
+- `forEachEntityWithComponent(…, SIM_ENTITY_MOVING)` throws "Cannot loop over this component type"; the street-edge
+  route above replaced it.
+- `MoveMode.DRIVE` = 1 (0 and 2 also seen among people on streets; 2 = walking, with `MODEL_PERSON`). 95–99% of the
+  people moving on street edges were driving.
+- **A driving person is the car:** it has `LAND_VEHICLE` and `MOVE_PATH`, no `MODEL_PERSON`, no
+  `SIM_ENTITY_AT_VEHICLE`. `isVisible` works on it (true on screen, false off); `isVehicleVisible` throws on it.
+- `targetOrAtEntity` was a town building for every sampled car, and it matched one of `destinations` each time
+  (residence, shopping or work; a missing slot is -1). The purpose columns stay; no land-use fallback.
+- **Cost:** 1–90 ms close up; 200–320 ms fully zoomed out (2,500–3,400 edges, 8 km circle), of which about a fifth of
+  the drivers were drawn. Round 2 probes how far the drawn cars reach (as a multiple of the eye distance) to tighten
+  the circle.
 ## §5 Testing
 
 - `tests/tally_test.lua`:

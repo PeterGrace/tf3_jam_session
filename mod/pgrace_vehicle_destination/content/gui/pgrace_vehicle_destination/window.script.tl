@@ -11,6 +11,8 @@ local LOG_PREFIX = "[vehicle_destination] "
 local WINDOW_ID = "pgrace_vehicle_destination_window"
 local BUTTON_ICON = "::/gui/entity_window/icons/vehicle_car.tga"
 local REFRESH_ICON = "::/gui/builtin/window/icons/refresh.tga"
+-- F2's "Show Only Visible" toggle (statistics_react_util.createShowOnlyVisibleButton).
+local EYE_ICON = "::/gui/statistics/icons/symbol_eye_18.tga"
 -- F2's class for numeric columns; window.css.lua aligns it inside our window.
 local RIGHT_ALIGNED = "right-aligned"
 
@@ -31,11 +33,11 @@ end
 local nextGeneration = 0
 
 -- Never throws. Runs on the main thread (see Destinations).
-local function takeSnapshot() : Snapshot
+local function takeSnapshot(onlyVisible : boolean) : Snapshot
 	nextGeneration = nextGeneration + 1
 	local snapshot : Snapshot = { error = false, rows = {}, keys = {}, generation = nextGeneration }
 	local ok, err = pcall(function() : boolean
-		snapshot.result = tally.group(scan.visibleCars().entries)
+		snapshot.result = tally.group(scan.cars(onlyVisible).entries)
 		for __, row in ipairs(snapshot.result.rows) do
 			snapshot.rows[row.town] = row
 			snapshot.keys[#snapshot.keys + 1] = row.town
@@ -71,14 +73,22 @@ local function formatCount(count : integer) : string
 	return tostring(count)
 end
 
-local function carsInViewText(count : integer) : string
+local function carsText(count : integer, onlyVisible : boolean) : string
 	local ok, code = pcall(function() : string
 		return app.getUserProfile():getLanguage().code
 	end)
-	local forms : {string : string} = {
-		one = _("{count} cars in view|one"), few = _("{count} cars in view|few"),
-		many = _("{count} cars in view|many"), other = _("{count} cars in view|other"),
-	}
+	local forms : {string : string}
+	if onlyVisible then
+		forms = {
+			one = _("{count} cars in view|one"), few = _("{count} cars in view|few"),
+			many = _("{count} cars in view|many"), other = _("{count} cars in view|other"),
+		}
+	else
+		forms = {
+			one = _("{count} cars nearby|one"), few = _("{count} cars nearby|few"),
+			many = _("{count} cars nearby|many"), other = _("{count} cars nearby|other"),
+		}
+	end
 	local category = tally.pluralCategory(ok and code as string or "en", count)
 	return fill(forms[category] or forms.other, { count = formatCount(count) })
 end
@@ -141,7 +151,7 @@ local function makeTable(snapshot : Snapshot) : TreeNodeId
 					local row = snapshot.rows[rowKey]
 					return row ~= nil and row.name or ""
 				end },
-			number(_("Cars"), _("Cars on screen heading to this town"), CarsCell, cars),
+			number(_("Cars"), _("Counted cars heading to this town"), CarsCell, cars),
 			number(_("Home"), _("Driving home"), HomeCell, home),
 			number(_("Work"), _("Driving to work"), WorkCell, work),
 			number(_("Shop"), _("Driving to the shops"), ShopCell, shop),
@@ -152,66 +162,117 @@ local function makeTable(snapshot : Snapshot) : TreeNodeId
 	}
 end
 
-local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", function() : TreeNodeId
+-- Settings kept between openings, until the game restarts (the window's state starts fresh each time it opens).
+local record Remembered
+	onlyVisible : boolean
+	expanded : boolean
+end
+local remembered : Remembered = { onlyVisible = true, expanded = false }
+
+local record ContentParams
+	expanded : boolean
+	setExpanded : function(boolean)
+end
+
+local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", function(params : ContentParams) : TreeNodeId
 	local snapshotState : ReactStateT<Snapshot> = react.useState(nil)
-	-- A scan is due: on open and after Refresh. isVisible reads the camera, which may be restricted during the react
-	-- step (world2Screen is: "API is currently restricted", an uncatchable crash), so the scan runs in a join on the
-	-- main thread, as Commuter Compass's label position.
+	local onlyVisibleState = react.useState(remembered.onlyVisible) as ReactStateT<boolean>
+	local onlyVisible = onlyVisibleState:old()
+	-- A scan is due: on open, after Refresh and when the eye changes. isVisible reads the camera, which may be
+	-- restricted during the react step (world2Screen is: "API is currently restricted", an uncatchable crash), so the
+	-- scan runs in a join on the main thread, as Commuter Compass's label position. It reads remembered, which the
+	-- eye's setter writes, so it never sees a stale value.
 	local pendingRef : ReactRefT<boolean> = react.useRef(true)
 	react.onStep(function()
 		if pendingRef:get() then
 			pendingRef:set(false)
 			react.enqueueJoin(function()
-				snapshotState:set(takeSnapshot())
+				snapshotState:set(takeSnapshot(remembered.onlyVisible))
 			end, "PgraceVehicleDestinationScan")
 		end
 	end)
 
-	local snapshot = snapshotState:old()
-	local body : {TreeNodeId} = {}
-	local header : string
-	if snapshot == nil then
-		header = _("Counting…")
-	elseif snapshot.error then
-		header = _("Error (see log)")
-	else
-		header = carsInViewText(snapshot.result.total)
-	end
-	body[#body + 1] = builtin.BoxLayout{
-		meta = { class = "toolbar" },
+	-- F2's toolbar (statistics_react_util): flat icon toggles with an 18 px icon, class "category", inside a box of
+	-- class "filter"; the eye (createShowOnlyVisibleButton), then refresh, then the expand toggle in its own box.
+	local filterButtons : {TreeNodeId} = {
+		builtin.ToggleButton{
+			meta = { class = "eye", tooltip = _("Count only the cars drawn on screen. Off: also cars on nearby streets too far away to be drawn.") },
+			value = onlyVisible and 1 or 0,
+			content = builtin.ImageView{
+				meta = { class = "category" },
+				path = EYE_ICON,
+				scaling = builtin.type.ImageViewScaling.AutoFit,
+			},
+			onValueChange = function(value : integer)
+				remembered.onlyVisible = value == 1
+				onlyVisibleState:set(value == 1)
+				pendingRef:set(true)
+			end,
+		},
+		builtin.Button{
+			meta = { class = "refresh", tooltip = _("Count the cars again") },
+			content = builtin.ImageView{
+				meta = { class = "category" },
+				path = REFRESH_ICON,
+				scaling = builtin.type.ImageViewScaling.AutoFit,
+			},
+			onClick = function()
+				pendingRef:set(true)
+			end,
+		},
+	}
+	local expandButton = builtin.ToggleButton{
+		meta = { class = "expand", tooltip = params.expanded and _("Shrink") or _("Expand") },
+		value = params.expanded and 1 or 0,
+		content = builtin.ImageView{
+			path = params.expanded and "::/gui/builtin/window/icons/symbol_minimize_18.tga"
+				or "::/gui/builtin/window/icons/symbol_maximize_18.tga",
+		},
+		onValueChange = function(value : integer)
+			params.setExpanded(value == 1)
+		end,
+	}
+	local toolbar = builtin.BoxLayout{
+		meta = { class = "look-up" },
 		orientation = builtin.type.Orientation.Horizontal,
 		children = {
-			builtin.TextView{ meta = { class = "font-scale-body" }, text = header },
-			builtin.Button{
-				meta = { class = "refresh", tooltip = _("Count the cars on screen again") },
-				content = builtin.ImageView{
-					path = REFRESH_ICON,
-					scaling = builtin.type.ImageViewScaling.AutoFit,
-				},
-				onClick = function()
-					pendingRef:set(true)
-				end,
+			builtin.BoxLayout{
+				meta = { class = "filter" },
+				orientation = builtin.type.Orientation.Horizontal,
+				children = filterButtons,
+			},
+			builtin.BoxLayout{
+				meta = { class = "filter" },
+				orientation = builtin.type.Orientation.Horizontal,
+				children = { expandButton },
 			},
 		},
 	}
-	if snapshot ~= nil and not snapshot.error then
-		if snapshot.result.total == 0 then
-			body[#body + 1] = textRow(_("No cars in view. Move the camera to a road and press Refresh."), "font-scale-body")
-		else
-			if #snapshot.keys > 0 then
-				body[#body + 1] = makeTable(snapshot)
-			end
-			local unknown = snapshot.result.unknown
-			if unknown ~= nil then
-				body[#body + 1] = textRow(fill(_("Destination unknown: {count}"), { count = formatCount(unknown.cars) }),
-					"font-scale-annotation")
-			end
+
+	local snapshot = snapshotState:old()
+	local body : {TreeNodeId} = {}
+	if snapshot == nil then
+		body[#body + 1] = textRow(_("Counting…"), "font-scale-annotation")
+	elseif snapshot.error then
+		body[#body + 1] = textRow(_("Error (see log)"), "font-scale-body, negative")
+	elseif snapshot.result.total == 0 then
+		body[#body + 1] = textRow(onlyVisible and _("No cars in view. Move the camera to a road and press Refresh.")
+			or _("No cars nearby. Move the camera to a road and press Refresh."), "font-scale-body")
+	else
+		local summary = carsText(snapshot.result.total, onlyVisible)
+		local unknown = snapshot.result.unknown
+		if unknown ~= nil then
+			summary = summary .. " · " .. fill(_("{count} destination unknown"), { count = formatCount(unknown.cars) })
+		end
+		body[#body + 1] = textRow(summary, "font-scale-annotation")
+		if #snapshot.keys > 0 then
+			body[#body + 1] = makeTable(snapshot)
 		end
 	end
 
-	-- F2's look: one tab carrying the title, filling the window through a floating layout (as F2's
-	-- StatisticsContainer and Trim the Fat; a plain BoxLayout may shrink to its content). The item must not be a
-	-- layout ("TabWidgetChild item must not be a Layout" crashes the whole UI), so it's wrapped in a Component.
+	-- F2's layout (StatisticsContainer), as Trim the Fat: a tab widget filling the window, here with one tab, and the
+	-- toolbar floated over the tab row's right end. The tab item must not be a layout ("TabWidgetChild item must not
+	-- be a Layout" crashes the whole UI), so it's wrapped in a Component.
 	return builtin.FloatingLayout{
 		children = {
 			builtin.FloatingLayoutChild{
@@ -235,21 +296,36 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 					},
 				},
 			},
+			builtin.FloatingLayoutChild{
+				localKey = "toolbar",
+				h = 1.0,
+				v = 0.0,
+				item = toolbar,
+			},
 		},
 	}
 end)
 
 local DestinationsWindow = react.RegisterWrapperRecipe("PgraceVehicleDestinationWindow", builtin.Window, function(params : ToolReactUtil.IToolWindowParam<ToolParam>) : TreeNodeId
-	-- Size and position come from window.css.lua, by this class.
+	local expandedState = react.useState(remembered.expanded) as ReactStateT<boolean>
+	-- Size, position and animations come from window.css.lua, by this class: F2's rules for its window.
 	return builtin.Window{
 		meta = { class = "pgrace-vehicle-destination" },
 		id = WINDOW_ID,
 		title = _("Car destinations"),
 		closable = true,
+		-- As F2: no title bar (the close button overlaps the content's top-right corner), docked, not movable.
 		compact = true,
 		movable = false,
 		onClose = params.onClose,
-		content = Destinations{},
+		expanded = expandedState:old(),
+		content = Destinations{
+			expanded = expandedState:old(),
+			setExpanded = function(expanded : boolean)
+				remembered.expanded = expanded
+				expandedState:set(expanded)
+			end,
+		},
 	}
 end)
 

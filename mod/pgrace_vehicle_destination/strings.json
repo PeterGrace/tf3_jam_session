@@ -1,6 +1,8 @@
 {
     "en": {
         "{count} cars in view|one": "{count} car in view",
-        "{count} cars in view|other": "{count} cars in view"
+        "{count} cars in view|other": "{count} cars in view",
+        "{count} cars nearby|one": "{count} car nearby",
+        "{count} cars nearby|other": "{count} cars nearby"
     }
 }
