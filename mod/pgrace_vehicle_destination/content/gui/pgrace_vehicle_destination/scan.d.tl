@@ -7,9 +7,10 @@ global record PgraceVehicleDestinationScan
 		moving : integer
 		-- Of those, people whose last move mode is DRIVE (on screen or not).
 		drivers : integer
+		-- CPU ms for the scan, excluding probe-only work.
 		ms : integer
 	end
 
-	-- Throws if the engine can't be read at all; a car that fails on its own becomes an unknown entry.
+	-- Throws if the engine can't be read at all (or MoveMode.DRIVE is missing); each entity is read in its own pcall; a car that fails on its own becomes an unknown entry.
 	visibleCars : function() : Result
 end
