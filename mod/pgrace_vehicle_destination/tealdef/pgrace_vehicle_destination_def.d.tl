@@ -1,1 +1,1 @@
-require "gui.pgrace_vehicle_destination.util"
+require "gui.pgrace_vehicle_destination.tally"
