@@ -49,16 +49,19 @@ local record Snapshot
 	-- Which list this is; part of the table's key.
 	onlyVisible : boolean
 	result : Result
-	-- rowKey (the town entity) -> row.
+	-- rowKey (an id per origin and destination pair, see pairKey) -> row.
 	rows : {integer : Row}
 	keys : {integer}
 	-- Differs per scan, so a refresh remounts the table (cells keep their first userParam).
 	generation : integer
 	-- Where the cars were counted (the camera's look-at point); the arrows start here.
 	from : Vec3f
-	-- rowKey -> straight-line metres from `from` to the town's centre (nil if unknown), and its text.
+	-- Destination town -> straight-line metres from `from` (the counted spot) to its centre, and its text ("Here").
 	distance : {integer : number}
 	distanceText : {integer : string}
+	-- rowKey -> straight-line metres from the origin town's centre to the destination's, and its text ("Trip").
+	trip : {integer : number}
+	tripText : {integer : string}
 	-- The town whose arrow is shown, or nil. Set by the window when it renders, so cells can read and change it.
 	selectionState : ReactStateT<Engine.Entity>
 end
@@ -94,8 +97,31 @@ local function formatDistance(metres : number) : string
 	return tostring(math.floor(metres + 0.5)) .. " m"
 end
 
+-- Row keys: one integer per origin and destination pair, the same for the whole session, so a selected row keeps its
+-- key across counts and between the eye's lists.
+local pairIds : {string : integer} = {}
+local nextPairId = 0
+
+local function pairKey(row : Row) : integer
+	local name = tostring(row.town) .. ">" .. tostring(row.from or -1)
+	local id = pairIds[name]
+	if id == nil then
+		nextPairId = nextPairId + 1
+		id = nextPairId
+		pairIds[name] = id
+	end
+	return id
+end
+
+local record Distances
+	here : {integer : number}
+	hereText : {integer : string}
+	trip : {integer : number}
+	tripText : {integer : string}
+end
+
 local function makeSnapshot(entries : {PgraceVehicleDestinationTally.Entry}, onlyVisible : boolean, from : Vec3f,
-		generation : integer, distance : {integer : number}, distanceText : {integer : string}) : Snapshot
+		generation : integer, d : Distances) : Snapshot
 	local kept : {PgraceVehicleDestinationTally.Entry} = {}
 	for __, entry in ipairs(entries) do
 		if entry.drawn or not onlyVisible then
@@ -103,10 +129,12 @@ local function makeSnapshot(entries : {PgraceVehicleDestinationTally.Entry}, onl
 		end
 	end
 	local snapshot : Snapshot = { error = false, onlyVisible = onlyVisible, result = tally.group(kept), rows = {},
-		keys = {}, generation = generation, from = from, distance = distance, distanceText = distanceText }
+		keys = {}, generation = generation, from = from, distance = d.here, distanceText = d.hereText, trip = d.trip,
+		tripText = d.tripText }
 	for __, row in ipairs(snapshot.result.rows) do
-		snapshot.rows[row.town] = row
-		snapshot.keys[#snapshot.keys + 1] = row.town
+		local key = pairKey(row)
+		snapshot.rows[key] = row
+		snapshot.keys[#snapshot.keys + 1] = key
 	end
 	return snapshot
 end
@@ -120,19 +148,35 @@ local function takeCount(keepFrom : Vec3f) : Count
 		local found = scan.cars()
 		local tWindow = os.clock() -- PROBE (remove before release)
 		local from = keepFrom or api.type.Vec3f.new(found.center.x, found.center.y, found.center.z)
-		local distance : {integer : number} = {}
-		local distanceText : {integer : string} = {}
-		local all = makeSnapshot(found.entries, false, from, generation, distance, distanceText)
-		-- Every town of either list is in `all`. Formatted here, once per count, not in the cells.
-		for __, town in ipairs(all.keys) do
-			local positionOk, position = pcall(townPosition, town)
-			if positionOk and position ~= nil then
-				local metres = planarDistance(from, position as Vec3f)
-				distance[town] = metres
-				distanceText[town] = formatDistance(metres)
+		local d : Distances = { here = {}, hereText = {}, trip = {}, tripText = {} }
+		local all = makeSnapshot(found.entries, false, from, generation, d)
+		-- Every row of either list is in `all`. Formatted here, once per count, not in the cells.
+		local positions : {integer : Vec3f} = {}
+		local function positionOf(town : integer) : Vec3f
+			if town == nil then
+				return nil
+			end
+			if positions[town] == nil then
+				local positionOk, position = pcall(townPosition, town)
+				positions[town] = positionOk and position as Vec3f or nil
+			end
+			return positions[town]
+		end
+		for key, row in pairs(all.rows) do
+			local to = positionOf(row.town)
+			if to ~= nil then
+				if d.here[row.town] == nil then
+					d.here[row.town] = planarDistance(from, to)
+					d.hereText[row.town] = formatDistance(d.here[row.town])
+				end
+				local origin = positionOf(row.from)
+				if origin ~= nil then
+					d.trip[key] = planarDistance(origin, to)
+					d.tripText[key] = formatDistance(d.trip[key])
+				end
 			end
 		end
-		local count : Count = { visible = makeSnapshot(found.entries, true, from, generation, distance, distanceText), all = all }
+		local count : Count = { visible = makeSnapshot(found.entries, true, from, generation, d), all = all }
 		debugPrint(LOG_PREFIX .. "probe timing ms: grouping and distances " -- PROBE (remove before release)
 			.. string.format("%.0f", (os.clock() - tWindow) * 1000)) -- PROBE (remove before release)
 		return count
@@ -142,7 +186,7 @@ local function takeCount(keepFrom : Vec3f) : Count
 	end
 	debugPrint(LOG_PREFIX .. "scan error: " .. tostring(countOrError))
 	local failed : Snapshot = { error = true, rows = {}, keys = {}, generation = generation, distance = {},
-		distanceText = {} }
+		distanceText = {}, trip = {}, tripText = {} }
 	return { visible = failed, all = failed }
 end
 
@@ -217,14 +261,14 @@ local TownCell = react.RegisterRecipe("PgraceVehicleDestinationTownCell", functi
 		return textRow("", "font-scale-body")
 	end
 	-- A town can't be deleted, but check anyway: the base button reads the entity's components.
-	local ok, exists = pcall(api.engine.entityExists, params.rowKey)
+	local ok, exists = pcall(api.engine.entityExists, row.town)
 	if not ok or not exists then
 		return textRow(row.name, "font-scale-body")
 	end
 	return builtin.BoxLayout{
 		orientation = builtin.type.Orientation.Horizontal,
 		children = {
-			makeLocateButton(params.rowKey),
+			makeLocateButton(row.town),
 			builtin.ToggleButton{
 				meta = { tooltip = _("Show on the map") },
 				content = builtin.ImageView{
@@ -246,10 +290,27 @@ local TownCell = react.RegisterRecipe("PgraceVehicleDestinationTownCell", functi
 			builtin.Component{
 				layout = builtin.BoxLayout{
 					children = {
-						line_react_util.makeEntityWindowButton(row.name, params.rowKey, nil, nil, true, nil, row.name),
+						line_react_util.makeEntityWindowButton(row.name, row.town, nil, nil, true, nil, row.name),
 					},
 				},
 			},
+		},
+	}
+end)
+
+-- The origin town's name (opens its window), or "Unknown".
+local FromCell = react.RegisterRecipe("PgraceVehicleDestinationFromCell", function(params : Builtin.TableCellParam) : TreeNodeId
+	local row = (params.userParam as Snapshot).rows[params.rowKey]
+	if row == nil or row.from == nil then
+		return textRow(_("Unknown"), "font-scale-body")
+	end
+	local ok, exists = pcall(api.engine.entityExists, row.from)
+	if not ok or not exists then
+		return textRow(row.fromName, "font-scale-body")
+	end
+	return builtin.BoxLayout{
+		children = {
+			line_react_util.makeEntityWindowButton(row.fromName, row.from, nil, nil, true, nil, row.fromName),
 		},
 	}
 end)
@@ -524,9 +585,16 @@ local HomeCell = makeNumberCell("PgraceVehicleDestinationHomeCell", home)
 local WorkCell = makeNumberCell("PgraceVehicleDestinationWorkCell", work)
 local ShopCell = makeNumberCell("PgraceVehicleDestinationShopCell", shop)
 
-local DistanceCell = react.RegisterRecipe("PgraceVehicleDestinationDistanceCell", function(params : Builtin.TableCellParam) : TreeNodeId
+local TripCell = react.RegisterRecipe("PgraceVehicleDestinationTripCell", function(params : Builtin.TableCellParam) : TreeNodeId
 	react.setStyleClasses(RIGHT_ALIGNED)
-	return textRow((params.userParam as Snapshot).distanceText[params.rowKey] or "–", "font-scale-body")
+	return textRow((params.userParam as Snapshot).tripText[params.rowKey] or "–", "font-scale-body")
+end)
+
+local HereCell = react.RegisterRecipe("PgraceVehicleDestinationHereCell", function(params : Builtin.TableCellParam) : TreeNodeId
+	react.setStyleClasses(RIGHT_ALIGNED)
+	local snapshot = params.userParam as Snapshot
+	local row = snapshot.rows[params.rowKey]
+	return textRow(row ~= nil and snapshot.distanceText[row.town] or "–", "font-scale-body")
 end)
 
 local record Sort
@@ -552,21 +620,33 @@ local function makeTable(snapshot : Snapshot, sort : Sort, onSort : function(int
 			.. tostring(sort.column)
 			.. (sort.ascending and "a" or "d") },
 		columns = {
-			builtin.ColumnDesc{ name = _("Town"), recipe = TownCell, weight = 3,
+			builtin.ColumnDesc{ name = _("From"), tooltip = _("Where the trip started"), recipe = FromCell, weight = 2.2,
+				getCompareValue = function(rowKey : integer) : any
+					local row = snapshot.rows[rowKey]
+					return row ~= nil and row.fromName or ""
+				end },
+			builtin.ColumnDesc{ name = _("To"), tooltip = _("Where the cars are heading"), recipe = TownCell, weight = 3,
 				getCompareValue = function(rowKey : integer) : any
 					local row = snapshot.rows[rowKey]
 					return row ~= nil and row.name or ""
 				end },
-			number(_("Cars"), _("Counted cars heading to this town"), CarsCell, cars),
+			number(_("Cars"), _("Counted cars on this trip"), CarsCell, cars),
 			number(_("Home"), _("Driving home"), HomeCell, home),
 			number(_("Work"), _("Driving to work"), WorkCell, work),
 			number(_("Shop"), _("Driving to the shops"), ShopCell, shop),
-			builtin.ColumnDesc{ name = _("Distance"),
-				tooltip = _("Straight-line distance from where the cars were counted to the town centre"),
-				recipe = DistanceCell, weight = 1.2, headerStyleClass = RIGHT_ALIGNED,
-				-- Unknown distances sort last when nearest-first.
+			-- Unknown distances sort last when nearest-first.
+			builtin.ColumnDesc{ name = _("Trip"),
+				tooltip = _("Straight-line distance from the centre of the town the trip started in to the destination's"),
+				recipe = TripCell, weight = 1.2, headerStyleClass = RIGHT_ALIGNED,
 				getCompareValue = function(rowKey : integer) : any
-					return snapshot.distance[rowKey] or math.huge
+					return snapshot.trip[rowKey] or math.huge
+				end },
+			builtin.ColumnDesc{ name = _("Here"),
+				tooltip = _("Straight-line distance from where the cars were counted to the destination town's centre"),
+				recipe = HereCell, weight = 1.2, headerStyleClass = RIGHT_ALIGNED,
+				getCompareValue = function(rowKey : integer) : any
+					local row = snapshot.rows[rowKey]
+					return row ~= nil and snapshot.distance[row.town] or math.huge
 				end },
 		},
 		rowKeys = snapshot.keys,
@@ -688,8 +768,8 @@ local record Remembered
 	expanded : boolean
 	sort : Sort
 end
--- Sorted by Cars, most first.
-local remembered : Remembered = { onlyVisible = true, expanded = false, sort = { column = 2, ascending = false } }
+-- Sorted by Cars (column 3), most first.
+local remembered : Remembered = { onlyVisible = true, expanded = false, sort = { column = 3, ascending = false } }
 
 local record ContentParams
 	gameCtx : GameContext
@@ -825,11 +905,14 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 			body[#body + 1] = makeTable(snapshot, sort, onSort)
 		end
 	end
-	local town = selectionState:old()
-	-- `all` holds every town of either list, so the eye doesn't take the arrow away.
-	if town ~= nil and snapshot ~= nil and snapshot.from ~= nil and count.all.rows[town] ~= nil then
+	-- The selection is a row key; `all` holds every row of either list, so the eye doesn't take the arrow away. The
+	-- arrow runs from the counted spot to the row's destination.
+	local selected = selectionState:old()
+	local selectedRow = selected ~= nil and count ~= nil and count.all.rows[selected] or nil
+	if selectedRow ~= nil and snapshot ~= nil and snapshot.from ~= nil then
 		body[#body + 1] = FlowAction{ gameCtx = params.gameCtx,
-			onViewSettled = function(view : View) viewRef:set(view) end, from = snapshot.from, town = town, generation = snapshot.generation }
+			onViewSettled = function(view : View) viewRef:set(view) end, from = snapshot.from, town = selectedRow.town,
+			generation = snapshot.generation }
 	end
 
 	-- F2's layout (StatisticsContainer), as Trim the Fat: a tab widget filling the window, here with one tab, and the

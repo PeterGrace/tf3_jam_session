@@ -12,6 +12,51 @@ t.test("purposeOf: matches residence, shopping, work", function()
 	t.eq(tally.purposeOf(-1, { 10, -1, 30 }), nil, "invalid target")
 end)
 
+t.test("originOf: home trips come from the last shop or work, others from home", function()
+	-- destinations: residence 10, shopping 20, work 30; lastNonResType 1 = shopping, 2 = work (index - 1).
+	local destinations = { 10, 20, 30 }
+	t.eq(tally.originOf(10, destinations, 1), 20, "home from shopping")
+	t.eq(tally.originOf(10, destinations, 2), 30, "home from work")
+	t.eq(tally.originOf(30, destinations, 1), 10, "to work from home")
+	t.eq(tally.originOf(20, destinations, 2), 10, "to shopping from home")
+	t.eq(tally.originOf(99, destinations, 2), 10, "unmatched target: from home, as the base game")
+	t.eq(tally.originOf(10, { 10, -1, 30 }, 1), nil, "invalid origin building")
+	t.eq(tally.originOf(10, destinations, nil), nil, "no last non-residential type")
+	t.eq(tally.originOf(nil, destinations, 1), nil, "no target")
+	t.eq(tally.originOf(10, nil, 1), nil, "no destinations")
+end)
+
+t.test("group: one row per origin and destination pair", function()
+	local r = tally.group({
+		{ town = 1, townName = "Tuscaloosa", from = 2, fromName = "Pasadena", purpose = "work" },
+		{ town = 1, townName = "Tuscaloosa", from = 3, fromName = "Elk Lodge", purpose = "work" },
+		{ town = 1, townName = "Tuscaloosa", from = 3, fromName = "Elk Lodge", purpose = "shop" },
+		{ town = 1, townName = "Tuscaloosa", from = 2, fromName = "Pasadena", purpose = "work" },
+		{ town = 1, townName = "Tuscaloosa", from = 3, fromName = "Elk Lodge", purpose = "work" },
+	})
+	t.eq(#r.rows, 2)
+	t.eq(r.rows[1].fromName, "Elk Lodge")
+	t.eq(r.rows[1].from, 3)
+	t.eq(r.rows[1].cars, 3)
+	t.eq(r.rows[1].work, 2)
+	t.eq(r.rows[2].fromName, "Pasadena")
+	t.eq(r.rows[2].cars, 2)
+	t.eq(r.total, 5)
+end)
+
+t.test("group: equal counts sort by destination, then origin; unknown origins get their own row", function()
+	local r = tally.group({
+		{ town = 1, townName = "Alpha", from = 5, fromName = "Zed" },
+		{ town = 1, townName = "Alpha" },
+		{ town = 1, townName = "Alpha", from = 4, fromName = "Bee" },
+	})
+	t.eq(#r.rows, 3)
+	t.eq(r.rows[1].fromName, nil, "unknown origin first (empty name)")
+	t.eq(r.rows[1].from, nil)
+	t.eq(r.rows[2].fromName, "Bee")
+	t.eq(r.rows[3].fromName, "Zed")
+end)
+
 t.test("group: one row per town with purpose counts", function()
 	local r = tally.group({
 		{ town = 1, townName = "Alpha", purpose = "work" },

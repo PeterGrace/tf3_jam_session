@@ -94,17 +94,32 @@ local probeMaxRatio = 0.0
 local probeVisibleMs = 0.0
 local probeEntryMs = 0.0
 
-local function entryFor(simPerson : Engine.Component.SimPerson) : Entry
+-- The town of a town building, and its name (from `names`, filled as towns are first seen); nil if it isn't one.
+local function townOf(building : Engine.Entity, names : {Engine.Entity : string}) : Engine.Entity, string
+	if building == nil or building < 0 or not api.engine.entityExists(building) then
+		return nil, nil
+	end
+	local townBuilding = api.engine.getComponent(building, api.type.ComponentType.TOWN_BUILDING) as Engine.Component.TownBuilding
+	local town = townBuilding ~= nil and townBuilding.town or nil
+	if town == nil or town < 0 or not api.engine.entityExists(town) then
+		return nil, nil
+	end
+	local name = names[town]
+	if name == nil then
+		name = api.engine.util.getEntityName(town)
+		names[town] = name
+	end
+	return town, name
+end
+
+local function entryFor(simPerson : Engine.Component.SimPerson, names : {Engine.Entity : string}) : Entry
 	local target = simPerson.targetOrAtEntity
-	local purpose = tally.purposeOf(target, simPerson.destinations)
-	if target == nil or target < 0 or not api.engine.entityExists(target) then
-		return { town = nil, purpose = purpose }
-	end
-	local building = api.engine.getComponent(target, api.type.ComponentType.TOWN_BUILDING) as Engine.Component.TownBuilding
-	if building == nil or building.town == nil or building.town < 0 or not api.engine.entityExists(building.town) then
-		return { town = nil, purpose = purpose }
-	end
-	return { town = building.town, townName = api.engine.util.getEntityName(building.town), purpose = purpose }
+	local entry : Entry = { purpose = tally.purposeOf(target, simPerson.destinations) }
+	entry.town, entry.townName = townOf(target, names)
+	-- The base game's rule (tally.originOf). lastNonResType is a LandUseType: 1 shopping, 2 work.
+	local origin = tally.originOf(target, simPerson.destinations, simPerson.lastNonResType as integer)
+	entry.from, entry.fromName = townOf(origin, names)
+	return entry
 end
 
 -- PROBE (remove before release)
@@ -118,7 +133,8 @@ local function probeEdgeRatio(edge : Engine.Entity, center : Circle, distance : 
 end
 
 -- A person on the street: an entry if driving, flagged with whether it's drawn on screen. Returns whether it was drawn.
-local function readOne(person : Engine.Entity, result : PgraceVehicleDestinationScan.Result, drive : MoveMode) : boolean
+local function readOne(person : Engine.Entity, result : PgraceVehicleDestinationScan.Result, drive : MoveMode,
+		names : {Engine.Entity : string}) : boolean
 	if not api.engine.entityExists(person) then
 		return false
 	end
@@ -135,7 +151,7 @@ local function readOne(person : Engine.Entity, result : PgraceVehicleDestination
 		result.drawn = result.drawn + 1
 	end
 	local te = os.clock() -- PROBE (remove before release)
-	local ok, entryOrError = pcall(entryFor, simPerson)
+	local ok, entryOrError = pcall(entryFor, simPerson, names)
 	probeEntryMs = probeEntryMs + (os.clock() - te) * 1000 -- PROBE (remove before release)
 	local entry : Entry = { town = nil }
 	if ok then
@@ -186,6 +202,7 @@ function scan.cars() : PgraceVehicleDestinationScan.Result
 		ms = 0,
 	}
 	local seen : {Engine.Entity : boolean} = {}
+	local names : {Engine.Entity : string} = {}
 	local simPersonSystem = api.engine.system.simPersonSystem
 	probeMaxRatio = 0.0 -- PROBE (remove before release)
 	local octreeMs = (os.clock() - tOctree) * 1000 -- PROBE (remove before release)
@@ -207,7 +224,7 @@ function scan.cars() : PgraceVehicleDestinationScan.Result
 				if not seen[person] then
 					seen[person] = true
 					result.moving = result.moving + 1
-					local readOk, drawnOrError = pcall(readOne, person, result, drive)
+					local readOk, drawnOrError = pcall(readOne, person, result, drive, names)
 					if not readOk and not loggedCarError then
 						loggedCarError = true
 						debugPrint(LOG_PREFIX .. "entity " .. tostring(person) .. " error: " .. tostring(drawnOrError))

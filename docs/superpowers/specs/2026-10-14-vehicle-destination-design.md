@@ -13,8 +13,9 @@ at a time.
 - **Every car in view** counts, moving or stopped. There's no speed filter: the player frames the jam and counts
   what's on screen.
 - **Snapshot**, not live: counted when the window opens and on Refresh.
-- **Out of scope for now:** origin towns (origin→destination pairs). The residence in `SimPerson.destinations` is
-  only the origin on outbound trips, so this needs its own probe and is a possible follow-up.
+- **Origin towns** (added after the first in-game rounds): one row per origin → destination pair. The origin is
+  worked out as the base game does (arrival tracker, person window): a trip home started at
+  `destinations[lastNonResType + 1]` (the last shop or workplace); any other trip started at home, `destinations[1]`.
 
 ## §1 Button and window
 
@@ -51,7 +52,7 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
   counts change (counted from what's on screen, which after framing is the arrow's whole route).
 - **Summary line** above the table: "{count} cars in view" (eye off: "{count} cars nearby"; one key per plural form,
   as in Commuter Compass), followed by " · {count} destination unknown" when there are any.
-- **Table:** a `builtin.DataTable` with the columns Town, Cars, Home, Work, Shop and Distance. It starts sorted by Cars,
+- **Table:** a `builtin.DataTable` with the columns listed below. It starts sorted by Cars,
   descending, and every column sorts on a header click.
   - The Town column has a weight and a tooltip with the full name. Its cells are
     `line_react_util.makeEntityWindowButton(name, town)`, so a click opens the town window.
@@ -65,9 +66,13 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
     the new spot) while its town is listed, and goes when the window closes.
   - The map action needs a fuller game context than the mod button area gives: the arrow builds one as `game.tl`
     does (default renderer, notification cache, empty filters).
-- **Distance column** (last, so Cars stays the default sort): the straight-line distance from the counted spot to the
-  town's centre, as the arrow's label, formatted once per count with `api.util.formatLength`. "–" if the town has no
-  position; those sort last when nearest-first.
+- **Columns:** From | To | Cars | Home | Work | Shop | Trip | Here (user's choice: both distances, arrow unchanged).
+  - **From:** the origin town's name (opens its window), or "Unknown". **To:** pin, arrow toggle and name, as before.
+  - **Trip:** straight-line distance between the two towns' centres. **Here:** from the counted spot to To's centre,
+    as the arrow's label. Both formatted once per count with `api.util.formatLength`; "–" if unknown, sorted last
+    when nearest-first.
+  - Row keys are one integer per pair for the session, so a selected row keeps its key across counts. Rows sharing a
+    destination share the arrow (counted spot → To); only the clicked row's toggle lights up.
 - **A header click rebuilds the table** in the new order (new `localKey`, `initialSortColumn` = the new sort), so the
   list starts at the top, as Trim the Fat. The sort is remembered between openings, like the eye.
 - **Each Refresh rebuilds the table** (a new `localKey`), so it starts at the top. This is the approach Trim the
