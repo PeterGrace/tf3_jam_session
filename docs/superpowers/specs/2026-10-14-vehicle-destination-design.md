@@ -35,8 +35,8 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
 ├──────────────┼──────┼──────┼──────┼────────┤
 │ Springfield  │ 23   │ 4    │ 15   │ 4      │
 │ Shelbyville  │ 12   │ 9    │ 2    │ 1      │
-│ Unknown      │ 7    │ 0    │ 0    │ 0      │
 └──────────────┴──────┴──────┴──────┴────────┘
+  Destination unknown: 7
 ```
 - **Header:** "{count} cars in view" (one key per plural form, as in Commuter Compass) and a Refresh button (⟳).
 - **Table:** a `builtin.DataTable` with the columns Town, Cars, Home, Work and Shop. It starts sorted by Cars,
@@ -46,8 +46,9 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
   - Numeric columns are narrow, with no weight and short headers.
   - **Each Refresh rebuilds the table** (a new `localKey`), so it starts at the top. This is the approach Trim the
     Fat settled on.
-- **Unknown row:** cars whose destination town can't be resolved. Its name isn't a button, and its purpose columns
-  count only what is known (usually nothing). It's always sorted to the bottom, whatever column is sorted.
+- **Unknown destinations:** cars whose destination town can't be resolved are counted in a line below the table
+  ("Destination unknown: 7"), not as a table row: the `DataTable` sorts every row by the clicked column, so a row
+  can't be pinned to the bottom. They're included in the header total.
 - **Empty view:** instead of the table, "No cars in view. Move the camera to a road and press Refresh."
 - **Error:** "Error (see log)", with the error logged under a `[vehicle_destination]` prefix.
 
@@ -69,19 +70,18 @@ Copied from Trim the Fat's overview (see AGENTS.md, "A game-bar button that open
    - Each car is read in its own `pcall`, so one bad entity becomes Unknown without failing the scan.
 5. Log `[vehicle_destination] scan: N moving, M cars, K visible, T ms` on each scan.
 
-The scan runs from the window's state (`useStateLazy`, and again on Refresh), not from a step timer.
-`isVisible` is a camera read; F2 calls `isLineEmptyOrVisible` on the react step, and it **crashed** from
-`useStepStateTimer` (see AGENTS.md). If the probe shows `isVisible` throws "API is currently restricted" on the
-react step, run the scan through `react.onStep` → `react.enqueueJoin` instead.
+The scan runs on the main thread: on open and on Refresh, the window sets a "scan due" ref, and `react.onStep`
+hands the scan to `react.enqueueJoin`. `isVisible` is a camera read, and camera reads can be restricted during the
+react step (`world2Screen` throws "API is currently restricted", an uncatchable crash) or crash from a step timer
+(`isLineEmptyOrVisible`, see AGENTS.md). The join is the path proven safe in Commuter Compass.
 
 ### Grouping (`tally.tl`, pure, unit-tested)
 
-`tally.group(entries) : { rows : {Row}, total : integer }`, where
+`tally.group(entries) : { rows : {Row}, unknown : Row|nil, total : integer }`, where
 `Row = { town : integer|nil, name : string, cars, home, work, shop : integer }`:
 
-- one row per town; `nil` towns are collected in a single Unknown row (name supplied by the caller, so it can be
-  translated);
-- sorted by `cars` descending, then by name; the Unknown row is always last;
+- one row per town; `nil` towns are collected in the separate `unknown` row;
+- `rows` sorted by `cars` descending, then by name;
 - `total` is the sum of `cars`, which equals the number of entries;
 - an entry with an unknown purpose adds to `cars` only, so `home + work + shop ≤ cars`.
 
@@ -118,7 +118,7 @@ Residential, Industrial and Commercial.
 - `tests/tally_test.lua`:
   - grouping and counts;
   - sorting by count, then name;
-  - Unknown always last;
+  - unknown towns kept out of `rows`;
   - an unknown purpose counts in `cars` only;
   - an empty input gives no rows and a total of 0.
 - `just verify` must pass.
