@@ -90,6 +90,9 @@ end
 -- PROBE (remove before release): the farthest drawn car's edge from the look-at point, as a multiple of the eye's
 -- distance, to size RADIUS_PER_DISTANCE.
 local probeMaxRatio = 0.0
+-- PROBE (remove before release): ms per stage of a scan, and whether isVisible works on street edges.
+local probeVisibleMs = 0.0
+local probeEntryMs = 0.0
 
 local function entryFor(simPerson : Engine.Component.SimPerson) : Entry
 	local target = simPerson.targetOrAtEntity
@@ -125,11 +128,15 @@ local function readOne(person : Engine.Entity, result : PgraceVehicleDestination
 	end
 	result.drivers = result.drivers + 1
 	-- A driving person is the car itself (it has LAND_VEHICLE and MOVE_PATH), so isVisible works on it.
+	local tv = os.clock() -- PROBE (remove before release)
 	local drawn = api.gui.byEntity.isVisible(person)
+	probeVisibleMs = probeVisibleMs + (os.clock() - tv) * 1000 -- PROBE (remove before release)
 	if drawn then
 		result.drawn = result.drawn + 1
 	end
+	local te = os.clock() -- PROBE (remove before release)
 	local ok, entryOrError = pcall(entryFor, simPerson)
+	probeEntryMs = probeEntryMs + (os.clock() - te) * 1000 -- PROBE (remove before release)
 	local entry : Entry = { town = nil }
 	if ok then
 		entry = entryOrError as Entry
@@ -170,6 +177,7 @@ function scan.cars() : PgraceVehicleDestinationScan.Result
 		debugPrint(LOG_PREFIX .. "footprint error: " .. tostring(footprintOrError))
 	end
 	local radius = circle.radius
+	local tOctree = os.clock() -- PROBE (remove before release)
 	local edges = api.engine.util.octree.findEntitiesInCircle(api.type.Vec2f.new(circle.x, circle.y), radius,
 		api.type.ComponentType.BASE_EDGE_STREET)
 
@@ -180,8 +188,19 @@ function scan.cars() : PgraceVehicleDestinationScan.Result
 	local seen : {Engine.Entity : boolean} = {}
 	local simPersonSystem = api.engine.system.simPersonSystem
 	probeMaxRatio = 0.0 -- PROBE (remove before release)
+	local octreeMs = (os.clock() - tOctree) * 1000 -- PROBE (remove before release)
+	local footprintMs = (tOctree - start) * 1000 -- PROBE (remove before release)
+	probeVisibleMs, probeEntryMs = 0.0, 0.0 -- PROBE (remove before release)
+	local peopleMs, edgeVisibleMs = 0.0, 0.0 -- PROBE (remove before release)
+	local edgesVisible, edgesWithDrawn, edgesWithDrawnHidden = 0, 0, 0 -- PROBE (remove before release)
 	for __, edge in ipairs(edges) do
+		local tev = os.clock() -- PROBE (remove before release)
+		local evOk, edgeVisible = pcall(api.gui.byEntity.isVisible, edge) -- PROBE (remove before release)
+		edgeVisibleMs = edgeVisibleMs + (os.clock() - tev) * 1000 -- PROBE (remove before release)
+		if evOk and edgeVisible == true then edgesVisible = edgesVisible + 1 end -- PROBE (remove before release)
+		local tp = os.clock() -- PROBE (remove before release)
 		local ok, peopleOrError = pcall(simPersonSystem.getSimPersonsMovingForTransportNetwork, edge)
+		peopleMs = peopleMs + (os.clock() - tp) * 1000 -- PROBE (remove before release)
 		if ok then
 			local anyDrawn = false -- PROBE (remove before release)
 			for __, person in ipairs(peopleOrError as {Engine.Entity}) do
@@ -196,6 +215,10 @@ function scan.cars() : PgraceVehicleDestinationScan.Result
 					anyDrawn = anyDrawn or (readOk and drawnOrError == true) -- PROBE (remove before release)
 				end
 			end
+			if anyDrawn then -- PROBE (remove before release)
+				edgesWithDrawn = edgesWithDrawn + 1 -- PROBE (remove before release)
+				if not (evOk and edgeVisible == true) then edgesWithDrawnHidden = edgesWithDrawnHidden + 1 end -- PROBE (remove before release)
+			end -- PROBE (remove before release)
 			if anyDrawn and distance > 0 then -- PROBE (remove before release)
 				pcall(probeEdgeRatio, edge, circle, circle.radius) -- PROBE (remove before release)
 			end -- PROBE (remove before release)
@@ -205,6 +228,13 @@ function scan.cars() : PgraceVehicleDestinationScan.Result
 		end
 	end
 	result.ms = math.floor((os.clock() - start) * 1000 + 0.5)
+	local f = function(ms : number) : string return string.format("%.0f", ms) end -- PROBE (remove before release)
+	debugPrint(LOG_PREFIX .. "probe timing ms: footprint " .. f(footprintMs) .. ", octree " .. f(octreeMs) -- PROBE (remove before release)
+		.. ", people per edge " .. f(peopleMs) .. ", car isVisible " .. f(probeVisibleMs) -- PROBE (remove before release)
+		.. ", destination " .. f(probeEntryMs) .. ", edge isVisible " .. f(edgeVisibleMs) -- PROBE (remove before release)
+		.. "; edges visible " .. tostring(edgesVisible) .. "/" .. tostring(#edges) -- PROBE (remove before release)
+		.. ", edges with drawn cars " .. tostring(edgesWithDrawn) .. " (of those, edge not visible: " -- PROBE (remove before release)
+		.. tostring(edgesWithDrawnHidden) .. ")") -- PROBE (remove before release)
 
 	debugPrint(LOG_PREFIX .. "scan: " .. tostring(result.edges) .. " street edges in " .. tostring(result.radius)
 		.. " m, " .. tostring(result.moving) .. " moving, " .. tostring(result.drivers) .. " drivers, "

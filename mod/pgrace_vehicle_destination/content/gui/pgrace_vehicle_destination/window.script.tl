@@ -118,6 +118,7 @@ local function takeCount(keepFrom : Vec3f) : Count
 	local generation = nextGeneration
 	local ok, countOrError = pcall(function() : Count
 		local found = scan.cars()
+		local tWindow = os.clock() -- PROBE (remove before release)
 		local from = keepFrom or api.type.Vec3f.new(found.center.x, found.center.y, found.center.z)
 		local distance : {integer : number} = {}
 		local distanceText : {integer : string} = {}
@@ -131,7 +132,10 @@ local function takeCount(keepFrom : Vec3f) : Count
 				distanceText[town] = formatDistance(metres)
 			end
 		end
-		return { visible = makeSnapshot(found.entries, true, from, generation, distance, distanceText), all = all }
+		local count : Count = { visible = makeSnapshot(found.entries, true, from, generation, distance, distanceText), all = all }
+		debugPrint(LOG_PREFIX .. "probe timing ms: grouping and distances " -- PROBE (remove before release)
+			.. string.format("%.0f", (os.clock() - tWindow) * 1000)) -- PROBE (remove before release)
+		return count
 	end)
 	if ok then
 		return countOrError as Count
