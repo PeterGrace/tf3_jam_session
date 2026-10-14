@@ -361,29 +361,39 @@ end
 -- for a moment after our recipe unmounts, and a ref of an unmounted recipe throws ("attempt to index a nil value" in
 -- the base notification cache took down the whole UI when the window closed). Module-level state lives on.
 
--- How long the notification state is reused (the base cache refreshes it each step).
-local NOTIFICATION_REFRESH_SECONDS = 0.25
-
+-- The notification state, refreshed on the main thread each step while an arrow is shown (FlowAction), and only read
+-- by the lookup below. The HUD icons call the lookup from worker threads, where reading the engine's notification
+-- state crashed the game natively ("Main Pool 1", no Lua error); the base cache splits the work the same way.
 local record NotificationCache
-	at : number
 	native : NativeLuaTable
 	persisting : {Engine.Entity : {integer}}
 end
-local notificationCache : NotificationCache = { at = -1, native = nil, persisting = {} }
+local notificationCache : NotificationCache = { native = nil, persisting = {} }
 
--- The base cache's lookup (notification_react_util.createNotificationCacheAccessFn) without its hooks. Never throws:
--- an error gives no notification icons.
+-- Main thread only.
+local function refreshNotifications()
+	local ok, native = pcall(notification_util.externalGetNotificationsStateNative)
+	if not ok or native == nil then
+		return
+	end
+	local persistingOk, persisting = pcall(notification_util.getPersistingEntity2NotificationFromNative, native as NativeLuaTable)
+	if persistingOk and persisting ~= nil then
+		-- Replaced whole, never edited in place, so a reader on another thread sees one state or the other.
+		notificationCache = { native = native as NativeLuaTable, persisting = persisting as {Engine.Entity : {integer}} }
+	end
+end
+
+-- The base cache's lookup (notification_react_util.createNotificationCacheAccessFn) without its hooks: it reads the
+-- cached state only. Never throws: an error gives no notification icons.
 local function accessNotifications(entity : Engine.Entity) : {Notification}
+	local cache = notificationCache
 	local ok, notificationsOrError = pcall(function() : {Notification}
-		local now = os.clock()
-		if notificationCache.native == nil or now - notificationCache.at > NOTIFICATION_REFRESH_SECONDS then
-			notificationCache.native = notification_util.externalGetNotificationsStateNative()
-			notificationCache.persisting = notification_util.getPersistingEntity2NotificationFromNative(notificationCache.native)
-			notificationCache.at = now
-		end
 		local result : {Notification} = {}
-		for __, notificationId in ipairs(notificationCache.persisting[entity] or {}) do
-			local notification = notification_util.getNotificationFromNative(notificationCache.native, notificationId)
+		if cache.native == nil then
+			return result
+		end
+		for __, notificationId in ipairs(cache.persisting[entity] or {}) do
+			local notification = notification_util.getNotificationFromNative(cache.native, notificationId)
 			notification.notificationId = notificationId
 			result[#result + 1] = notification
 		end
@@ -497,6 +507,8 @@ end
 -- window closed) clears the override.
 local FlowAction = react.RegisterRecipe("PgraceVehicleDestinationFlowAction", function(params : FlowParams) : TreeNodeId
 	local gameCtx = mapGameContext(params.gameCtx)
+	-- The HUD icons' notification lookup reads this (see refreshNotifications).
+	react.onStep(refreshNotifications)
 	local key = tostring(params.generation) .. ">" .. tostring(params.town)
 	local cacheRef : ReactRefT<FlowCache> = react.useRef(nil)
 	local frameRef : ReactRefT<{Vec3f}> = react.useRef(nil)
