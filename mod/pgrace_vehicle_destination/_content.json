@@ -1,9 +1,12 @@
 {
     "archives": null,
     "files": [
+        "gui/pgrace_vehicle_destination/button.res.lua",
         "gui/pgrace_vehicle_destination/scan.d.tl",
         "gui/pgrace_vehicle_destination/scan.tl",
         "gui/pgrace_vehicle_destination/tally.d.tl",
-        "gui/pgrace_vehicle_destination/tally.tl"
+        "gui/pgrace_vehicle_destination/tally.tl",
+        "gui/pgrace_vehicle_destination/window.css.lua",
+        "gui/pgrace_vehicle_destination/window.script.tl"
     ]
 }
