@@ -66,6 +66,8 @@ local record Snapshot
 	tripText : {integer : string}
 	-- The row key (trip) whose arrow is shown, or nil. Set by the window when it renders, so cells can read and change it.
 	selectionState : ReactStateT<integer>
+	-- Shrinks the window if it's expanded (set by the window when it renders, as selectionState).
+	collapse : function()
 end
 
 -- One count (on open and on Refresh). The eye only picks a list, so toggling it never counts again or moves the
@@ -310,6 +312,11 @@ local TownCell = react.RegisterRecipe("PgraceJamSessionTownCell", function(param
 					end
 					if value == 1 then
 						snapshot.selectionState:set(params.rowKey)
+						-- An expanded window covers most of the screen, so the framed arrow (and its label) would be
+						-- behind it: shrink it first.
+						if snapshot.collapse ~= nil then
+							snapshot.collapse()
+						end
 					elseif snapshot.selectionState:old() == params.rowKey then
 						snapshot.selectionState:set(nil)
 					end
@@ -997,6 +1004,11 @@ local Destinations = react.RegisterRecipe("PgraceJamSessionContent", function(pa
 	if count ~= nil then
 		snapshot = onlyVisible and count.visible or count.all
 		snapshot.selectionState = selectionState
+		snapshot.collapse = function()
+			if params.expanded then
+				params.setExpanded(false)
+			end
+		end
 	end
 	local body : {TreeNodeId} = {}
 	local progress = progressState:old()
