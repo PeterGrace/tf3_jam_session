@@ -1,11 +1,15 @@
 # Vehicle Destination (Transport Fever 3 mod)
 
-TODO: what the mod does.
+Counts the private cars on screen and lists where they're heading and where they came from, one row per
+origin → destination trip, so you can see which trips a new line, a bypass or a ring road would take off the road.
+A car button next to the map layers button opens the window; a refresh counts again, an eye toggle includes cars too
+far away to be drawn, and each row can show an arrow on the map.
 
 - Mod ID: `pgrace_vehicle_destination`
 - Cosmetic: yes. It doesn't affect the simulation, so achievements stay enabled.
 
-Agent and modding notes for all mods live in `../AGENTS.md`.
+Agent and modding notes for all mods live in `../AGENTS.md`. The design and its in-game findings are in
+`docs/superpowers/specs/2026-10-14-vehicle-destination-design.md`.
 
 ## Layout
 
@@ -14,9 +18,11 @@ mod/pgrace_vehicle_destination/                        # the mod folder TF3 load
 ├── mod.json, _metadata/              # modinfo.json, description.html, screenshots
 ├── tealdef/                          # Teal type definitions (canonical; build.py mirrors them into content/)
 └── content/gui/pgrace_vehicle_destination/
-    ├── industry_plugin.res.lua       # registers the card in the industry window
-    ├── pgrace_vehicle_destination.script.tl           # UI
-    └── util.tl                       # pure helpers (unit-tested)
+    ├── button.res.lua                # registers the game-bar button (::MainModButtonAreaExtension)
+    ├── window.script.tl              # button, window, table, map arrow
+    ├── window.css.lua                # F2-style window, toolbar, arrow label
+    ├── scan.tl                       # engine reads: cars on the streets around the camera, spread over frames
+    └── tally.tl                      # pure grouping, trip origin, plurals (unit-tested)
 tools/                                # type check, tests, install, release checks
 tests/                                # unit tests for pure modules
 ```
@@ -31,7 +37,7 @@ just install    # symlink into TF3's staging area (just install-copy to copy)
 ```
 
 Restart TF3 after code changes. The log is
-`~/.local/share/Steam/userdata/*/3493540/local/crash_dump/stdout.txt`; our lines start with `[pgrace_vehicle_destination]`.
+`~/.local/share/Steam/userdata/*/3493540/local/crash_dump/stdout.txt`; our lines start with `[vehicle_destination]`.
 
 ## Releasing
 
