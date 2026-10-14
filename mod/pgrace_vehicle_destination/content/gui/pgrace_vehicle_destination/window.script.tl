@@ -209,22 +209,28 @@ local Destinations = react.RegisterRecipe("PgraceVehicleDestinationContent", fun
 		end
 	end
 
-	-- F2's look: one tab carrying the title. The item must not be a layout ("TabWidgetChild item must not be a
-	-- Layout" crashes the whole UI), so it's wrapped in a Component.
-	return builtin.BoxLayout{
+	-- F2's look: one tab carrying the title, filling the window through a floating layout (as F2's
+	-- StatisticsContainer and Trim the Fat; a plain BoxLayout may shrink to its content). The item must not be a
+	-- layout ("TabWidgetChild item must not be a Layout" crashes the whole UI), so it's wrapped in a Component.
+	return builtin.FloatingLayout{
 		children = {
-			builtin.TabWidget{
-				orientation = builtin.type.TabOrientation.North,
-				deselectAllowed = false,
-				value = "destinations",
-				onValueChange = function(__ : integer|number|string) end,
-				tabs = {
-					builtin.TabWidgetChild{
-						localKey = "destinations",
-						value = "destinations",
-						indicator = builtin.TextView{ meta = { class = "font-scale-tab-widget-indicator" }, text = _("Car destinations") },
-						item = builtin.Component{
-							layout = builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = body },
+			builtin.FloatingLayoutChild{
+				localKey = "tabs",
+				h = -1,
+				v = -1,
+				item = builtin.TabWidget{
+					orientation = builtin.type.TabOrientation.North,
+					deselectAllowed = false,
+					value = "destinations",
+					onValueChange = function(__ : integer|number|string) end,
+					tabs = {
+						builtin.TabWidgetChild{
+							localKey = "destinations",
+							value = "destinations",
+							indicator = builtin.TextView{ meta = { class = "font-scale-tab-widget-indicator" }, text = _("Car destinations") },
+							item = builtin.Component{
+								layout = builtin.BoxLayout{ orientation = builtin.type.Orientation.Vertical, children = body },
+							},
 						},
 					},
 				},
