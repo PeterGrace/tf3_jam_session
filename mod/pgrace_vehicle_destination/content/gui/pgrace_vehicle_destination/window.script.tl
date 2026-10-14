@@ -9,7 +9,7 @@ local selector_react_util = ug_require "::/gui/main/selector_react_util.tl" as S
 local color_util = ug_require "::/gui/main/color_util.tl" as ColorUtil
 local callout_react_util = ug_require "::/gui/main/callout_react_util.tl" as CalloutReactUtil
 local styleutil = ug_require "::/gui/main/styleutil.tl" as StyleUtil
-local notification_react_util = ug_require "::/game_mechanics/notifications/types/notification_react_util.tl" as NotificationReactUtil
+local notification_util = ug_require "::/game_mechanics/notifications/notification_util.tl" as NotificationUtil
 local tally = ug_require "pgrace_vehicle_destination::/gui/pgrace_vehicle_destination/tally.tl" as PgraceVehicleDestinationTally
 local scan = ug_require "pgrace_vehicle_destination::/gui/pgrace_vehicle_destination/scan.tl" as PgraceVehicleDestinationScan
 
@@ -346,22 +346,67 @@ local function frameCamera(from : Vec3f, to : Vec3f)
 end
 
 -- The map action's selector and HUD icons read these from the game context. The window gets none (the mod button
--- area passes no gameCtx), so build them as the game does (game.tl): its default renderer, a notification cache, and
--- empty filters.
-local function useMapGameContext(base : GameContext) : GameContext
-	local accessNotificationCacheFn = notification_react_util.createNotificationCacheAccessFn()
-	local filters : ReactRefT<GameContext.Filters> = react.useRef({
-		menuFilter = { enabledItems = {}, disabledItems = {}, disabledParams = {} },
-		vehicleFilter = { enabledVehicles = {}, disabledVehicles = {} },
-		protectedEntities = {},
-		selectorEntityFilter = {},
-	})
+-- area passes no gameCtx), so build them. Not with hooks, as game.tl does: the renderer keeps calling into the action
+-- for a moment after our recipe unmounts, and a ref of an unmounted recipe throws ("attempt to index a nil value" in
+-- the base notification cache took down the whole UI when the window closed). Module-level state lives on.
+
+-- How long the notification state is reused (the base cache refreshes it each step).
+local NOTIFICATION_REFRESH_SECONDS = 0.25
+
+local record NotificationCache
+	at : number
+	native : NativeLuaTable
+	persisting : {Engine.Entity : {integer}}
+end
+local notificationCache : NotificationCache = { at = -1, native = nil, persisting = {} }
+
+-- The base cache's lookup (notification_react_util.createNotificationCacheAccessFn) without its hooks. Never throws:
+-- an error gives no notification icons.
+local function accessNotifications(entity : Engine.Entity) : {Notification}
+	local ok, notificationsOrError = pcall(function() : {Notification}
+		local now = os.clock()
+		if notificationCache.native == nil or now - notificationCache.at > NOTIFICATION_REFRESH_SECONDS then
+			notificationCache.native = notification_util.externalGetNotificationsStateNative()
+			notificationCache.persisting = notification_util.getPersistingEntity2NotificationFromNative(notificationCache.native)
+			notificationCache.at = now
+		end
+		local result : {Notification} = {}
+		for __, notificationId in ipairs(notificationCache.persisting[entity] or {}) do
+			local notification = notification_util.getNotificationFromNative(notificationCache.native, notificationId)
+			notification.notificationId = notificationId
+			result[#result + 1] = notification
+		end
+		return result
+	end)
+	if ok then
+		return notificationsOrError as {Notification}
+	end
+	return {}
+end
+
+-- Empty filters, as game.tl starts with, behind a ref-shaped object (the selector calls filters:get()).
+local mapFilters : GameContext.Filters = {
+	menuFilter = { enabledItems = {}, disabledItems = {}, disabledParams = {} },
+	vehicleFilter = { enabledVehicles = {}, disabledVehicles = {} },
+	protectedEntities = {},
+	selectorEntityFilter = {},
+}
+local record FiltersRef
+	get : function(FiltersRef) : GameContext.Filters
+	set : function(FiltersRef, GameContext.Filters)
+end
+local mapFiltersRef : FiltersRef = {
+	get = function(__ : FiltersRef) : GameContext.Filters return mapFilters end,
+	set = function(__ : FiltersRef, filters : GameContext.Filters) mapFilters = filters end,
+}
+
+local function mapGameContext(base : GameContext) : GameContext
 	return {
 		rendererComponent = game_react_globals.getDefaultRendererComponent(),
 		windowContainer = base.windowContainer,
 		toolStack = base.toolStack,
-		accessNotificationCacheFn = accessNotificationCacheFn,
-		filters = filters,
+		accessNotificationCacheFn = accessNotifications,
+		filters = mapFiltersRef as any as ReactRefT<GameContext.Filters>,
 	} as GameContext
 end
 
@@ -428,8 +473,7 @@ end
 -- Binds a map action that draws one arrow and makes it the renderer's active owner override. Unmounting (arrow off,
 -- window closed) clears the override.
 local FlowAction = react.RegisterRecipe("PgraceVehicleDestinationFlowAction", function(params : FlowParams) : TreeNodeId
-	-- Built here, not in the window, so the notification cache only polls while an arrow is shown.
-	local gameCtx = useMapGameContext(params.gameCtx)
+	local gameCtx = mapGameContext(params.gameCtx)
 	local key = tostring(params.generation) .. ">" .. tostring(params.town)
 	local cacheRef : ReactRefT<FlowCache> = react.useRef(nil)
 	local frameRef : ReactRefT<{Vec3f}> = react.useRef(nil)
